@@ -5,6 +5,7 @@ export const TransactionStatusSchema = z.enum(["success", "failed", "pending"]);
 export const SettlementStatusSchema = z.enum(["settled", "pending", "failed"]);
 export const RefundStatusSchema = z.enum(["issued", "pending", "failed"]);
 export const MessageChannelSchema = z.enum(["whatsapp", "sms", "email", "call"]);
+export type MessageChannel = z.infer<typeof MessageChannelSchema>;
 
 const base = {
   id: IdSchema,

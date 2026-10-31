@@ -98,6 +98,9 @@ model Submission {
 // A DB trigger is deferred.
 model ActionLog {
   id           String   @id
+  // Insertion order. Entries from one agent run share a timestamp, and id is
+  // random, so seq is the tiebreak. Internal only: not in the contract or mappers.
+  seq          Int      @default(autoincrement())
   disputeId    String
   timestamp    DateTime @db.Timestamptz
   step         String
@@ -110,5 +113,5 @@ model ActionLog {
 
   dispute Dispute @relation(fields: [disputeId], references: [id], onDelete: Restrict)
 
-  @@index([disputeId, timestamp])
+  @@index([disputeId, timestamp, seq])
 }

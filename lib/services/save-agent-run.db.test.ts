@@ -57,6 +57,23 @@ describe.skipIf(!TEST_URL)("saveAgentRun (database)", () => {
     expect(saved.approval.status).toBe("pending");
   });
 
+  it("keeps the action log in the agent's step order, even with non-sorted ids", async () => {
+    // Every entry of a run shares one timestamp. Ids descend, so ordering by id would reverse the run.
+    let n = 100;
+    const { recommendation, actionLog } = runMockAgent(dispute, {
+      now: () => new Date("2026-11-05T10:00:00.000Z"),
+      createId: () => `id_${--n}`,
+    });
+    const expected = actionLog.map((e) => e.id);
+    expect(expected).not.toEqual([...expected].sort());
+
+    const saved = await save({ disputeId: dispute.id, recommendation, actionLog, approval });
+    expect(saved.actionLog.map((e) => e.id)).toEqual(expected);
+    const { listActionLog } = await import("../db/repositories/action-log");
+    expect((await listActionLog(dispute.id)).map((e) => e.id)).toEqual(expected);
+    expect((await listActionLog(dispute.id)).map((e) => e.step)).toEqual(["detect", "gather", "validate", "decide"]);
+  });
+
   it("also accepts a dispute in gathering", async () => {
     await disputes.updateDisputeStatus(dispute.id, "gathering");
     const { recommendation, actionLog } = run();

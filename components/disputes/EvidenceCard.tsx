@@ -7,6 +7,7 @@ import type {
   SettlementEvidence,
   TransactionEvidence,
 } from "@/contracts";
+import { channelLabel, languageLabel } from "@/lib/evidence-display";
 import { formatDateTime, formatPaise, humanizeEnum } from "@/lib/format";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -67,9 +68,9 @@ function CustomerMessageBody({ evidence }: { evidence: CustomerMessageEvidence }
   return (
     <div className="space-y-3">
       <Fields>
-        <Field label="Channel">{humanizeEnum(evidence.channel)}</Field>
+        <Field label="Channel">{channelLabel(evidence.channel)}</Field>
         <Field label="Sent"><Time iso={evidence.sentAt} /></Field>
-        <Field label="Language">{evidence.language}</Field>
+        <Field label="Language">{languageLabel(evidence.language)}</Field>
       </Fields>
       {/* lang lets screen readers pronounce non-English messages correctly */}
       <blockquote

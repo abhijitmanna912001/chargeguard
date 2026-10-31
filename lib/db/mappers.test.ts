@@ -80,6 +80,8 @@ describe("disputeFromRow", () => {
 });
 
 const logRow = {
+  seq: 1, // DB insertion order; the mapper ignores it
+
   id: "l1",
   disputeId: "d1",
   timestamp: D,

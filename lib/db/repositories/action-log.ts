@@ -15,13 +15,17 @@ export async function appendActionLog(
   return actionLogFromRow(row);
 }
 
+/**
+ * Oldest first. Entries of one agent run share a timestamp and ids are random,
+ * so `seq` (insertion order) breaks ties. Served by (disputeId, timestamp, seq).
+ */
 export async function listActionLog(
   disputeId: string,
   db: DbClient = prisma,
 ): Promise<ActionLogEntry[]> {
   const rows = await db.actionLog.findMany({
     where: { disputeId },
-    orderBy: [{ timestamp: "asc" }, { id: "asc" }],
+    orderBy: [{ timestamp: "asc" }, { seq: "asc" }],
   });
   return rows.map(actionLogFromRow);
 }
