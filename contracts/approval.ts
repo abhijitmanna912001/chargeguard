@@ -13,6 +13,7 @@ export const ApprovalRequestSchema = z
   .object({
     id: IdSchema,
     disputeId: IdSchema,
+    recommendationId: IdSchema,
     requestedAt: IsoDateTimeSchema,
     flags: z.array(FlagSchema),
     proposedAction: ActionSchema,

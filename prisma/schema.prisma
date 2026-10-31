@@ -53,26 +53,30 @@ model Recommendation {
   overrideReason String?
   flags          String[]
 
-  dispute Dispute @relation(fields: [disputeId], references: [id])
+  dispute          Dispute           @relation(fields: [disputeId], references: [id])
+  approvalRequests ApprovalRequest[]
 
   @@index([disputeId, createdAt])
 }
 
 model ApprovalRequest {
-  id             String    @id
-  disputeId      String
-  requestedAt    DateTime  @db.Timestamptz
-  flags          String[]
-  proposedAction String
-  status         String
-  resolvedAction String?
-  decidedBy      String?
-  decidedAt      DateTime? @db.Timestamptz
-  note           String?
+  id               String    @id
+  disputeId        String
+  requestedAt      DateTime  @db.Timestamptz
+  recommendationId String
+  flags            String[]
+  proposedAction   String
+  status           String
+  resolvedAction   String?
+  decidedBy        String?
+  decidedAt        DateTime? @db.Timestamptz
+  note             String?
 
-  dispute Dispute @relation(fields: [disputeId], references: [id])
+  dispute        Dispute        @relation(fields: [disputeId], references: [id])
+  recommendation Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Restrict)
 
   @@index([disputeId])
+  @@index([recommendationId])
 }
 
 model Submission {

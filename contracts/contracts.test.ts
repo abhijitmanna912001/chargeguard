@@ -123,6 +123,29 @@ describe("EvidenceSchema", () => {
     expect(ok({ ...refund, status: "failed" })).toBe(true);
   });
 
+  const delivery = {
+    ...common,
+    type: "delivery_proof",
+    kind: "courier_tracking",
+    reference: "AWB123",
+  };
+
+  it("requires deliveredAt when delivery status is delivered", () => {
+    expect(ok({ ...delivery, status: "delivered", deliveredAt: T })).toBe(true);
+    expect(ok({ ...delivery, status: "delivered" })).toBe(false);
+  });
+
+  it("forbids deliveredAt unless delivery status is delivered", () => {
+    for (const status of ["in_transit", "returned_to_origin", "failed", "unknown"]) {
+      expect(ok({ ...delivery, status }), status).toBe(true);
+      expect(ok({ ...delivery, status, deliveredAt: T }), status).toBe(false);
+    }
+  });
+
+  it("rejects an unknown delivery status", () => {
+    expect(ok({ ...delivery, status: "lost" })).toBe(false);
+  });
+
   it("rejects unknown status and channel values", () => {
     expect(ok({ ...settlement, status: "done", settledAt: T })).toBe(false);
     expect(
@@ -155,11 +178,18 @@ describe("ApprovalRequestSchema", () => {
   const base = {
     id: "a1",
     disputeId: "d1",
+    recommendationId: "r1",
     requestedAt: T,
     flags: [],
     proposedAction: "defend",
   };
   const ok = (v: unknown) => ApprovalRequestSchema.safeParse(v).success;
+
+  it("requires recommendationId", () => {
+    expect(ok({ ...base, status: "pending" })).toBe(true);
+    expect(ok({ ...base, status: "pending", recommendationId: undefined })).toBe(false);
+    expect(ok({ ...base, status: "pending", recommendationId: "" })).toBe(false);
+  });
 
   it("accepts pending with no decision fields", () => {
     expect(ok({ ...base, status: "pending" })).toBe(true);

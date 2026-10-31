@@ -46,13 +46,40 @@ export const DeliveryProofKindSchema = z.enum([
   "service_log",
 ]);
 
-export const DeliveryProofEvidenceSchema = z.object({
-  ...base,
-  type: z.literal("delivery_proof"),
-  kind: DeliveryProofKindSchema,
-  deliveredAt: IsoDateTimeSchema,
-  reference: z.string().min(1),
-});
+export const DeliveryStatusSchema = z.enum([
+  "delivered",
+  "in_transit",
+  "returned_to_origin",
+  "failed",
+  "unknown",
+]);
+export type DeliveryStatus = z.infer<typeof DeliveryStatusSchema>;
+
+export const DeliveryProofEvidenceSchema = z
+  .object({
+    ...base,
+    type: z.literal("delivery_proof"),
+    kind: DeliveryProofKindSchema,
+    status: DeliveryStatusSchema,
+    deliveredAt: IsoDateTimeSchema.optional(),
+    reference: z.string().min(1),
+  })
+  .superRefine((val, ctx) => {
+    if (val.status === "delivered" && !val.deliveredAt) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["deliveredAt"],
+        message: "deliveredAt is required when status is delivered",
+      });
+    }
+    if (val.status !== "delivered" && val.deliveredAt !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["deliveredAt"],
+        message: "deliveredAt must be absent unless status is delivered",
+      });
+    }
+  });
 
 export const CustomerMessageEvidenceSchema = z.object({
   ...base,
