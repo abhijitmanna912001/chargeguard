@@ -713,6 +713,27 @@ describe("completeness", () => {
     expect(a.flags).toEqual([]);
   });
 
+  // Regression: main's fixtures use "13.1"; it is an exact prototype alias.
+  it("32d. reason code 13.1 is an exact alias of GOODS_NOT_RECEIVED", () => {
+    const alias = DEFAULT_EVIDENCE_POLICIES["13.1"];
+    expect(alias.requirements).toBe(DEFAULT_EVIDENCE_POLICIES.GOODS_NOT_RECEIVED.requirements);
+    expect(alias.description).toMatch(/^Prototype alias/);
+
+    const a = assess(dispute(clean(), { reasonCode: "13.1" }));
+    expect(a.flags).toEqual([]);
+    expect(a.evidenceCompleteness).toMatchObject({ policy: "13.1", complete: true, requiredCount: 2 });
+    const b = assess(dispute([delivery("e2", "delivered")], { reasonCode: "13.1" }));
+    expect(b.missingEvidenceTypes).toEqual(["transaction"]);
+  });
+
+  it("32e. no fuzzy matching around 13.1", () => {
+    for (const reasonCode of ["13", "13.10", "13.2", " 13.1", "13.1 ", "13,1", "13.1.0"]) {
+      expect(assess(dispute(clean(), { reasonCode })).flags, JSON.stringify(reasonCode)).toEqual([
+        "unsupported_reason_code",
+      ]);
+    }
+  });
+
   // Regression: the contract cannot show a second charge, so no policy claims to.
   it("32c. DUPLICATE_TRANSACTION is unsupported by the default policy", () => {
     expect(Object.keys(DEFAULT_EVIDENCE_POLICIES)).not.toContain("DUPLICATE_TRANSACTION");
