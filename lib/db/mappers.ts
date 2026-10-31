@@ -6,6 +6,7 @@ import {
   DisputeSchema,
   type ActionLogEntry,
   type Dispute,
+  type Evidence,
 } from "../../contracts";
 import type {
   ActionLog as ActionLogRow,
@@ -65,5 +66,43 @@ export function actionLogToCreateData(
   return {
     ...valid,
     timestamp: new Date(valid.timestamp),
+  };
+}
+
+export type EvidenceWriteData = {
+  id: string;
+  fields: {
+    disputeId: string;
+    type: string;
+    collectedAt: Date;
+    payload: Prisma.InputJsonObject;
+  };
+};
+
+export type DisputeWriteData = {
+  id: string;
+  fields: Omit<DisputeRow, "id">;
+  evidence: EvidenceWriteData[];
+};
+
+// Inverse of evidenceFromRow: everything except the columns goes into payload.
+function evidenceToWriteData(evidence: Evidence): EvidenceWriteData {
+  const { id, disputeId, type, collectedAt, ...payload } = evidence;
+  return {
+    id,
+    fields: { disputeId, type, collectedAt: new Date(collectedAt), payload },
+  };
+}
+
+export function disputeToWriteData(input: Dispute): DisputeWriteData {
+  const { id, evidence, deadline, createdAt, ...rest } = DisputeSchema.parse(input);
+  const foreign = evidence.find((e) => e.disputeId !== id);
+  if (foreign) {
+    throw new Error(`Evidence ${foreign.id} belongs to dispute ${foreign.disputeId}, not ${id}`);
+  }
+  return {
+    id,
+    fields: { ...rest, deadline: new Date(deadline), createdAt: new Date(createdAt) },
+    evidence: evidence.map(evidenceToWriteData),
   };
 }

@@ -3,9 +3,11 @@ import {
   actionLogFromRow,
   actionLogToCreateData,
   disputeFromRow,
+  disputeToWriteData,
   type DisputeRowWithEvidence,
 } from "./mappers";
-import { MAX_PAISE, type ActionLogEntry } from "../../contracts";
+import { cases } from "../../fixtures/cases";
+import { MAX_PAISE, type ActionLogEntry, type Dispute } from "../../contracts";
 
 const D = new Date("2026-01-01T10:30:00.000Z");
 
@@ -126,5 +128,55 @@ describe("actionLogToCreateData", () => {
     expect(() =>
       actionLogToCreateData({ ...entry, confidence: 1.5 }),
     ).toThrow();
+  });
+});
+
+// contract -> write data -> row-shaped object (as the DB would return it,
+// payload passed through JSON) -> contract.
+function viaFakeDb(dispute: Dispute): Dispute {
+  const { id, fields, evidence } = disputeToWriteData(dispute);
+  return disputeFromRow({
+    id,
+    ...fields,
+    evidence: evidence.map((e) => ({
+      id: e.id,
+      ...e.fields,
+      payload: JSON.parse(JSON.stringify(e.fields.payload)),
+    })),
+  });
+}
+
+describe("disputeToWriteData round trip", () => {
+  it.each(cases.map((c) => [c.dispute.id, c.dispute] as const))(
+    "fixture %s survives the round trip unchanged",
+    (_id, dispute) => {
+      expect(viaFakeDb(dispute)).toEqual(dispute);
+    },
+  );
+
+  it("keeps only non-column fields in the evidence payload", () => {
+    const { evidence } = disputeToWriteData(cases[0].dispute);
+    const delivery = evidence.find((e) => e.fields.type === "delivery_proof");
+    expect(delivery?.fields.payload).toEqual({
+      kind: "courier_tracking",
+      status: "delivered",
+      deliveredAt: "2026-10-24T11:40:00.000Z",
+      reference: "AWB-DEMO-100245",
+    });
+    expect(delivery?.fields.collectedAt).toBeInstanceOf(Date);
+  });
+
+  it("rejects an invalid dispute", () => {
+    expect(() =>
+      disputeToWriteData({ ...cases[0].dispute, amount: MAX_PAISE + 1 }),
+    ).toThrow();
+  });
+
+  it("rejects evidence that belongs to another dispute", () => {
+    const d = cases[0].dispute;
+    const stray = { ...d.evidence[0], disputeId: "other" };
+    expect(() =>
+      disputeToWriteData({ ...d, evidence: [stray, ...d.evidence.slice(1)] }),
+    ).toThrow(/belongs to dispute/);
   });
 });
