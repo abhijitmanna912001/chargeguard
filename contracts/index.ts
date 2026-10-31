@@ -6,3 +6,4 @@ export * from "./action-log";
 export * from "./approval";
 export * from "./submission";
 export * from "./defense-package";
+export * from "./eval-results";

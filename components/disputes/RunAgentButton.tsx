@@ -5,7 +5,13 @@ import type { ActionState } from "@/app/disputes/[id]/schemas";
 
 export type RunAgentAction = () => Promise<ActionState>;
 
-export function RunAgentButton({ action }: { action: RunAgentAction }) {
+type Props = {
+  action: RunAgentAction;
+  /** Same flag the pages pass elsewhere. The live model can take a while, so only live mode shows the wait note. */
+  isMockAgent?: boolean;
+};
+
+export function RunAgentButton({ action, isMockAgent = true }: Props) {
   // useActionState passes (prevState, payload); the bound action needs neither.
   const [state, formAction, pending] = useActionState<ActionState | null>(() => action(), null);
   return (
@@ -17,6 +23,9 @@ export function RunAgentButton({ action }: { action: RunAgentAction }) {
       >
         {pending ? "Running agent…" : "Run agent"}
       </button>
+      <p aria-live="polite" className="mt-3 text-sm text-zinc-700 dark:text-zinc-300">
+        {pending && !isMockAgent ? "Analysing the evidence. This can take up to 30 seconds." : ""}
+      </p>
       <p aria-live="polite" className="mt-3 text-sm font-medium text-red-800 dark:text-red-300">
         {state && !state.ok ? state.message : ""}
       </p>

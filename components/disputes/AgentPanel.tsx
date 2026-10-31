@@ -48,7 +48,7 @@ export async function AgentPanel({ disputeId, runAgent, resolveApproval, submitD
           The agent has not looked at this dispute yet. Running it gathers the evidence, recommends whether to defend,
           accept or escalate, and then waits for your approval. Nothing is sent to the network.
         </p>
-        <RunAgentButton action={runAgent.bind(null, disputeId)} />
+        <RunAgentButton action={runAgent.bind(null, disputeId)} isMockAgent={isMockAgent} />
       </Shell>
     );
   }

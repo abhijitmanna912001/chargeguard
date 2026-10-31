@@ -26,4 +26,26 @@ describe("RunAgentButton", () => {
     await userEvent.click(screen.getByRole("button", { name: "Run agent" }));
     expect(await screen.findByText("This dispute is not ready for that step.")).toHaveAttribute("aria-live", "polite");
   });
+
+  it("in live mode shows the wait note, politely announced, only while pending", async () => {
+    let finish!: (s: ActionState) => void;
+    const action = vi.fn(() => new Promise<ActionState>((r) => (finish = r)));
+    render(<RunAgentButton action={action} isMockAgent={false} />);
+    const note = "Analysing the evidence. This can take up to 30 seconds.";
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Run agent" }));
+    expect(await screen.findByText(note)).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByRole("button", { name: "Running agent…" })).toBeDisabled();
+    finish({ ok: true });
+    await waitFor(() => expect(screen.queryByText(note)).not.toBeInTheDocument());
+  });
+
+  it("in mock mode does not show the wait note while pending", async () => {
+    let finish!: (s: ActionState) => void;
+    render(<RunAgentButton action={() => new Promise<ActionState>((r) => (finish = r))} isMockAgent />);
+    await userEvent.click(screen.getByRole("button", { name: "Run agent" }));
+    await screen.findByRole("button", { name: "Running agent…" });
+    expect(screen.queryByText(/Analysing the evidence/)).not.toBeInTheDocument();
+    finish({ ok: true });
+  });
 });
