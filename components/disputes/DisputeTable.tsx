@@ -1,0 +1,69 @@
+import type { Dispute } from "@/contracts";
+import { formatDeadline, formatPaise } from "@/lib/format";
+import { getMockRecommendation } from "@/lib/mock/recommendation";
+import { ActionBadge } from "./ActionBadge";
+import { StatusBadge } from "./StatusBadge";
+
+const th = "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400";
+const td = "px-4 py-3 align-middle text-sm";
+
+export function DisputeTable({ disputes, now }: { disputes: Dispute[]; now: Date }) {
+  if (disputes.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-zinc-300 p-6 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+        No disputes yet. Run <code className="font-mono">npm run db:seed</code> to add demo cases.
+      </p>
+    );
+  }
+
+  return (
+    <div
+      role="region"
+      aria-label="Disputes table"
+      tabIndex={0}
+      className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800"
+    >
+      <table className="w-full min-w-[44rem] border-collapse">
+        <caption className="px-4 py-3 text-left text-sm text-zinc-600 dark:text-zinc-400">
+          Open payment disputes, with the deadline for responding and the suggested next action.
+        </caption>
+        <thead className="bg-zinc-50 dark:bg-zinc-900">
+          <tr>
+            <th scope="col" className={th}>Dispute id</th>
+            <th scope="col" className={`${th} text-right`}>Amount</th>
+            <th scope="col" className={th}>Reason code</th>
+            <th scope="col" className={th}>Status</th>
+            <th scope="col" className={th}>Deadline</th>
+            <th scope="col" className={th}>Recommendation</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+          {disputes.map((dispute) => {
+            const recommendation = getMockRecommendation(dispute);
+            return (
+              <tr key={dispute.id}>
+                <th scope="row" className={`${td} font-mono font-medium`}>{dispute.id}</th>
+                <td className={`${td} text-right tabular-nums`}>{formatPaise(dispute.amount)}</td>
+                <td className={`${td} font-mono`}>{dispute.reasonCode}</td>
+                <td className={td}><StatusBadge status={dispute.status} /></td>
+                <td className={td}>
+                  <time dateTime={dispute.deadline} title={dispute.deadline}>
+                    {formatDeadline(dispute.deadline, now)}
+                  </time>
+                </td>
+                <td className={td}>
+                  <span className="inline-flex items-center gap-2">
+                    <ActionBadge action={recommendation.action} />
+                    <span className="rounded border border-dashed border-zinc-500 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+                      {recommendation.label}
+                    </span>
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
