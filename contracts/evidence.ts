@@ -21,14 +21,24 @@ export const TransactionEvidenceSchema = z.object({
   occurredAt: IsoDateTimeSchema,
 });
 
-export const SettlementEvidenceSchema = z.object({
-  ...base,
-  type: z.literal("settlement"),
-  settlementId: IdSchema,
-  amount: PaiseSchema,
-  status: SettlementStatusSchema,
-  settledAt: IsoDateTimeSchema,
-});
+export const SettlementEvidenceSchema = z
+  .object({
+    ...base,
+    type: z.literal("settlement"),
+    settlementId: IdSchema,
+    amount: PaiseSchema,
+    status: SettlementStatusSchema,
+    settledAt: IsoDateTimeSchema.optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.status === "settled" && !val.settledAt) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["settledAt"],
+        message: "settledAt is required when status is settled",
+      });
+    }
+  });
 
 export const DeliveryProofKindSchema = z.enum([
   "courier_tracking",
@@ -53,13 +63,23 @@ export const CustomerMessageEvidenceSchema = z.object({
   language: z.string().min(1),
 });
 
-export const RefundEvidenceSchema = z.object({
-  ...base,
-  type: z.literal("refund"),
-  amount: PaiseSchema,
-  status: RefundStatusSchema,
-  issuedAt: IsoDateTimeSchema,
-});
+export const RefundEvidenceSchema = z
+  .object({
+    ...base,
+    type: z.literal("refund"),
+    amount: PaiseSchema,
+    status: RefundStatusSchema,
+    issuedAt: IsoDateTimeSchema.optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.status === "issued" && !val.issuedAt) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["issuedAt"],
+        message: "issuedAt is required when status is issued",
+      });
+    }
+  });
 
 export const EvidenceSchema = z.discriminatedUnion("type", [
   TransactionEvidenceSchema,

@@ -18,12 +18,22 @@ export const ApprovalRequestSchema = z
     note: z.string().optional(),
   })
   .superRefine((val, ctx) => {
-    if (val.status !== "pending" && !val.decidedAt) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["decidedAt"],
-        message: "decidedAt is required when status is not pending",
-      });
+    const decided = val.status !== "pending";
+    for (const key of ["decidedAt", "decidedBy"] as const) {
+      if (decided && !val[key]) {
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: `${key} is required when status is ${val.status}`,
+        });
+      }
+      if (!decided && val[key] !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: `${key} must be absent while status is pending`,
+        });
+      }
     }
   });
 export type ApprovalRequest = z.infer<typeof ApprovalRequestSchema>;

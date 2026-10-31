@@ -11,8 +11,24 @@ export const FlagSchema = z.enum([
   "amount_over_limit",
   "low_confidence",
   "model_failure",
+  "deadline_at_risk",
+  "unsupported_reason_code",
+  "refund_issued",
+  "transaction_not_successful",
 ]);
 export type Flag = z.infer<typeof FlagSchema>;
+
+/** Flags that forbid defending the dispute. */
+export const BLOCKING_FLAGS: readonly Flag[] = [
+  "missing_evidence",
+  "contradictory_records",
+  "deadline_expired",
+  "amount_over_limit",
+  "low_confidence",
+  "model_failure",
+  "unsupported_reason_code",
+  "transaction_not_successful",
+];
 
 /** What the model returns. Advisory only; rules decide the final action. */
 export const ModelOutputSchema = z.object({
@@ -49,13 +65,28 @@ export const RecommendationSchema = z
           message: "finalAction must be escalate when modelOutput is null",
         });
       }
-      return;
-    }
-    if (val.modelOutput.action !== val.finalAction && !val.overrideReason) {
+    } else if (val.modelOutput.action !== val.finalAction && !val.overrideReason) {
       ctx.addIssue({
         code: "custom",
         path: ["overrideReason"],
         message: "overrideReason is required when finalAction differs from the model action",
+      });
+    }
+    if (
+      val.finalAction === "defend" &&
+      val.flags.some((f) => BLOCKING_FLAGS.includes(f))
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["finalAction"],
+        message: "finalAction cannot be defend when a blocking flag is present",
+      });
+    }
+    if (val.flags.includes("amount_over_limit") && val.finalAction !== "escalate") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["finalAction"],
+        message: "finalAction must be escalate when amount_over_limit is present",
       });
     }
   });
