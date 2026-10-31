@@ -165,18 +165,43 @@ describe("ApprovalRequestSchema", () => {
     expect(ok({ ...base, status: "pending" })).toBe(true);
   });
 
-  it("forbids decidedAt or decidedBy while pending", () => {
+  it("forbids resolvedAction, decidedAt and decidedBy while pending", () => {
     expect(ok({ ...base, status: "pending", decidedAt: T })).toBe(false);
     expect(ok({ ...base, status: "pending", decidedBy: "u1" })).toBe(false);
+    expect(ok({ ...base, status: "pending", resolvedAction: "defend" })).toBe(false);
   });
 
-  it("requires both decidedAt and decidedBy once approved or rejected", () => {
-    for (const status of ["approved", "rejected"]) {
-      expect(ok({ ...base, status }), status).toBe(false);
-      expect(ok({ ...base, status, decidedAt: T }), status).toBe(false);
-      expect(ok({ ...base, status, decidedBy: "u1" }), status).toBe(false);
-      expect(ok({ ...base, status, decidedAt: T, decidedBy: "u1" }), status).toBe(true);
-    }
+  const decision = { decidedAt: T, decidedBy: "u1" };
+
+  it("requires resolvedAction, decidedBy and decidedAt when approved", () => {
+    const full = { ...base, status: "approved", resolvedAction: "defend", ...decision };
+    expect(ok(full)).toBe(true);
+    expect(ok({ ...full, resolvedAction: undefined })).toBe(false);
+    expect(ok({ ...full, decidedBy: undefined })).toBe(false);
+    expect(ok({ ...full, decidedAt: undefined })).toBe(false);
+  });
+
+  it("allows resolvedAction to differ from proposedAction", () => {
+    const approved = { ...base, status: "approved", ...decision };
+    expect(ok({ ...approved, resolvedAction: "accept" })).toBe(true);
+    expect(ok({ ...approved, proposedAction: "escalate", resolvedAction: "defend" })).toBe(true);
+  });
+
+  it("rejects an escalate resolvedAction", () => {
+    const approved = { ...base, status: "approved", ...decision };
+    expect(ok({ ...approved, resolvedAction: "escalate" })).toBe(false);
+  });
+
+  it("requires decidedBy and decidedAt when rejected", () => {
+    const rejected = { ...base, status: "rejected", ...decision };
+    expect(ok(rejected)).toBe(true);
+    expect(ok({ ...rejected, decidedBy: undefined })).toBe(false);
+    expect(ok({ ...rejected, decidedAt: undefined })).toBe(false);
+  });
+
+  it("forbids resolvedAction when rejected", () => {
+    const rejected = { ...base, status: "rejected", ...decision };
+    expect(ok({ ...rejected, resolvedAction: "accept" })).toBe(false);
   });
 });
 
