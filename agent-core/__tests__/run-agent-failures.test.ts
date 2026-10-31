@@ -84,6 +84,8 @@ describe("evidence assessment failure", () => {
     const r = await runAgent(dispute, d);
     expectSafeEscalation(r);
     expect(d.calls.count).toBe(0);
+    // No model call, so no telemetry.
+    expect(r.modelCallMetadata).toBeNull();
     expect(r.actionLog.find((e) => e.step === "gather")).toMatchObject({
       actor: "system",
       outcome: "evidence_assessment_failed",
@@ -115,6 +117,8 @@ describe("unexpected internal failure", () => {
     expect(r.actionLog.map((e) => e.outcome)).toContain("model_recommended_accept");
     // Flags established before the failure are kept (no delivery proof here).
     expect(r.recommendation.flags).toEqual(["missing_evidence", "amount_over_limit", "model_failure"]);
+    // The model call did happen, so its telemetry survives the internal failure.
+    expect(r.modelCallMetadata).toMatchObject({ status: "succeeded", attemptCount: 1 });
     const times = r.actionLog.map((e) => Date.parse(e.timestamp));
     for (let i = 1; i < times.length; i++) expect(times[i]).toBeGreaterThan(times[i - 1]);
   });

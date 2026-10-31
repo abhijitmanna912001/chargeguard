@@ -24,7 +24,15 @@ export const SARVAM_MODEL = "sarvam-105b";
 export const MAX_TOKENS_CAP = 2048;
 // Sarvam's own default; nothing in the smoke tests argued for another value.
 export const DEFAULT_TEMPERATURE = 0.2;
-export const DEFAULT_TIMEOUT_MS = 30_000;
+/** Per attempt, response-body read included. Clipped further by the remaining budget. */
+export const DEFAULT_TIMEOUT_MS = 12_000;
+/**
+ * The whole call: every attempt, body reads, backoff and the time between
+ * attempts. No attempt or wait may run past it, Retry-After included.
+ */
+export const DEFAULT_TOTAL_BUDGET_MS = 25_000;
+/** A retry starts only if at least this much budget would remain for it after the wait. */
+export const MIN_ATTEMPT_MS = 1_000;
 /** Hard ceiling: at most 3 attempts per call, whatever the caller asks. */
 export const MAX_RETRIES = 2;
 export const INITIAL_BACKOFF_MS = 500;
@@ -43,18 +51,26 @@ const ErrorBodySchema = z.object({
 export type CallOptions = {
   /** Per attempt. Defaults to DEFAULT_TIMEOUT_MS. */
   timeoutMs?: number;
+  /** Whole call. Defaults to DEFAULT_TOTAL_BUDGET_MS. */
+  totalBudgetMs?: number;
   /** 0 to MAX_RETRIES; anything else is clamped. */
   maxRetries?: number;
   /** Backoff wait. Replaceable so tests run without real delays. */
   sleep?: (ms: number) => Promise<void>;
+  /** Monotonic milliseconds for elapsed time. Defaults to performance.now(). */
+  clock?: () => number;
 };
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+// Read at call time, not import time, so fake timers that replace performance work.
+const defaultClock = () => performance.now();
 
 /**
- * Calls sarvam-105b once (plus limited retries on transient failures) and
- * returns validated output. Never throws, and never executes tools: tool mode
- * only returns validated tool-call requests for the orchestrator to run.
+ * Calls sarvam-105b once (plus limited retries on transient failures, within
+ * the total budget) and returns validated output. Never throws, and never
+ * executes tools: tool mode only returns validated tool-call requests for the
+ * orchestrator to run. Success metadata and every ModelError carry the whole
+ * call's attemptCount and latencyMs.
  */
 export function callSarvam<Schema extends z.ZodType>(
   request: StructuredRequest<Schema>,
@@ -68,22 +84,26 @@ export async function callSarvam(
   request: ModelRequest,
   options: CallOptions = {},
 ): Promise<ModelResult<StructuredOutput<unknown> | ToolOutput<readonly ToolDefinition[]>>> {
+  const clock = options.clock ?? defaultClock;
+  const startedAt = clock();
+  const elapsed = () => clock() - startedAt;
+  // Failures before the network: zero attempts, time spent so far.
+  const beforeNetwork = (error: ModelError) => ({ ok: false as const, error: retimed(error, 0, elapsed()) });
+
   const invalid = validateRequest(request);
-  if (invalid) return { ok: false, error: invalid };
+  if (invalid) return beforeNetwork(invalid);
 
   // Read per call, server-side only. Never NEXT_PUBLIC_*.
   const apiKey = process.env.SARVAM_API_KEY?.trim();
-  if (!apiKey) {
-    return { ok: false, error: new ModelError("missing_api_key", "SARVAM_API_KEY is not set") };
-  }
+  if (!apiKey) return beforeNetwork(new ModelError("missing_api_key", "SARVAM_API_KEY is not set"));
 
   const payload = buildPayload(request);
-  if (payload instanceof ModelError) return { ok: false, error: payload };
+  if (payload instanceof ModelError) return beforeNetwork(payload);
 
-  const response = await postWithRetries(payload, apiKey, options);
+  const response = await postWithRetries(payload, apiKey, options, elapsed);
   if (!response.ok) return response;
 
-  const envelope = parseEnvelope(response.body, response.latencyMs, response.attempts);
+  const envelope = parseEnvelope(response.body, roundMs(elapsed()), response.attemptCount);
   if (!envelope.ok) return envelope;
 
   return request.mode === "structured"
@@ -215,36 +235,116 @@ function buildPayload(request: ModelRequest): string | ModelError {
 }
 
 // ---------------------------------------------------------------------------
-// Transport: per-attempt timeout, bounded retries, typed failures
+// Transport: per-attempt timeout, total budget, bounded retries, typed failures
 // ---------------------------------------------------------------------------
 
 type Failure = { kind: ModelErrorKind; message: string; details: ModelErrorDetails };
 type Attempt = { ok: true; body: unknown } | { ok: false; failure: Failure };
-type Posted = { ok: true; body: unknown; latencyMs: number; attempts: number } | { ok: false; error: ModelError };
+type Posted = { ok: true; body: unknown; attemptCount: number } | { ok: false; error: ModelError };
 
 function clampRetries(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) return MAX_RETRIES;
   return Math.min(Math.max(0, Math.floor(value)), MAX_RETRIES);
 }
 
-async function postWithRetries(payload: string, apiKey: string, options: CallOptions): Promise<Posted> {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+function positiveMs(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/** Telemetry is reported in whole milliseconds; budget checks use the exact clock. */
+function roundMs(ms: number): number {
+  return Math.max(0, Math.round(ms));
+}
+
+/** The same error with this call's timing; used for failures raised before the network. */
+function retimed(error: ModelError, attemptCount: number, latencyMs: number): ModelError {
+  return new ModelError(error.kind, error.message, {
+    retryable: error.retryable,
+    status: error.status,
+    providerCode: error.providerCode,
+    providerRequestId: error.providerRequestId,
+    retryAfterMs: error.retryAfterMs,
+    metadata: error.metadata,
+    issues: error.issues,
+    toolName: error.toolName,
+    attemptCount,
+    latencyMs: roundMs(latencyMs),
+  });
+}
+
+async function postWithRetries(
+  payload: string,
+  apiKey: string,
+  options: CallOptions,
+  elapsed: () => number,
+): Promise<Posted> {
+  const timeoutMs = positiveMs(options.timeoutMs, DEFAULT_TIMEOUT_MS);
+  const budgetMs = positiveMs(options.totalBudgetMs, DEFAULT_TOTAL_BUDGET_MS);
   const maxRetries = clampRetries(options.maxRetries);
   const sleep = options.sleep ?? defaultSleep;
 
-  for (let attempt = 1; ; attempt++) {
-    const started = Date.now();
-    const result = await attemptOnce(payload, apiKey, timeoutMs);
-    if (result.ok) return { ok: true, body: result.body, latencyMs: Date.now() - started, attempts: attempt };
+  /** attemptCount is the number of requests actually started, never one that was not. */
+  const exhausted = (attemptCount: number, last: Failure | undefined) => ({
+    ok: false as const,
+    error: new ModelError(
+      "budget_exhausted",
+      last
+        ? `Model call budget of ${budgetMs}ms used up after ${attemptCount} attempt(s); last failure: ${last.kind}`
+        : `Model call budget of ${budgetMs}ms used up before the first attempt`,
+      {
+        status: last?.details.status,
+        providerCode: last?.details.providerCode,
+        providerRequestId: last?.details.providerRequestId,
+        retryAfterMs: last?.details.retryAfterMs,
+        attemptCount,
+        latencyMs: roundMs(elapsed()),
+      },
+    ),
+  });
 
-    const { kind, message, details } = result.failure;
-    const error = new ModelError(kind, message, { ...details, attempts: attempt });
+  let last: Failure | undefined;
+  for (let attempt = 1; ; attempt++) {
+    // Re-measured right before every request, after any wait: a sleep can
+    // overshoot its delay. The first attempt needs some budget left; a retry
+    // needs at least MIN_ATTEMPT_MS.
+    const remainingMs = budgetMs - elapsed();
+    if (remainingMs <= 0 || (attempt > 1 && remainingMs < MIN_ATTEMPT_MS)) return exhausted(attempt - 1, last);
+
+    // The abort timer covers the request and the body read, and cancels the
+    // fetch itself, so nothing keeps running once the attempt is given up.
+    const attemptTimeoutMs = Math.min(timeoutMs, remainingMs);
+    const result = await attemptOnce(payload, apiKey, attemptTimeoutMs);
+    if (result.ok) return { ok: true, body: result.body, attemptCount: attempt };
+
+    const failure = result.failure;
+    last = failure;
+    // Cut short by the remaining budget rather than by its own timeout.
+    if (failure.kind === "timeout" && attemptTimeoutMs < timeoutMs) return exhausted(attempt, failure);
+
+    const error = new ModelError(failure.kind, failure.message, {
+      ...failure.details,
+      attemptCount: attempt,
+      latencyMs: roundMs(elapsed()),
+    });
     if (!error.retryable || attempt > maxRetries) return { ok: false, error };
 
-    const delay = error.retryAfterMs ?? Math.min(INITIAL_BACKOFF_MS * 2 ** (attempt - 1), MAX_BACKOFF_MS);
+    const requestedDelay = error.retryAfterMs ?? Math.min(INITIAL_BACKOFF_MS * 2 ** (attempt - 1), MAX_BACKOFF_MS);
     // Sarvam asked for a longer wait than we allow inside one call: hand the
     // decision to the orchestrator rather than hammering the API early.
-    if (delay > MAX_BACKOFF_MS) return { ok: false, error };
+    if (requestedDelay > MAX_BACKOFF_MS) return { ok: false, error };
+
+    // Budget limits. The total budget stops new provider requests from
+    // starting after the deadline. Event-loop or OS scheduling delays can
+    // still make a retry sleep finish late, so the call may return after the
+    // nominal budget. That is accepted: a timer-based hard return would be
+    // delayed by the same event loop.
+    //
+    // The wait is never longer than the remaining budget, and is skipped
+    // when MIN_ATTEMPT_MS would not be left after it. The check at the top of
+    // the loop still decides after the wait, using the real elapsed time.
+    const remainingBeforeWaitMs = budgetMs - elapsed();
+    const delay = Math.min(requestedDelay, Math.max(0, remainingBeforeWaitMs));
+    if (remainingBeforeWaitMs - delay < MIN_ATTEMPT_MS) return exhausted(attempt, failure);
     await sleep(delay);
   }
 }

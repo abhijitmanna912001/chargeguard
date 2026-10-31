@@ -94,7 +94,7 @@ describe.skipIf(!TEST_URL)("real runAgent + saveAgentRun (database)", () => {
 
   it("a model failure saves an escalate recommendation with null modelOutput and model_failure", async () => {
     const { dispute } = cases[0];
-    const failure = new ModelError("provider_error", "Sarvam server error (HTTP 500)", { status: 500, attempts: 3 });
+    const failure = new ModelError("provider_error", "Sarvam server error (HTTP 500)", { status: 500, attemptCount: 3 });
     const { saved } = await runAndSave(dispute, failure);
 
     expect(saved.recommendation.finalAction).toBe("escalate");

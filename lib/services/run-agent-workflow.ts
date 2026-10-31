@@ -9,7 +9,29 @@ import { runMockAgent } from "../mock/run-agent";
 import { DisputeNotFoundError, DisputeNotReadyError } from "./errors";
 import { saveAgentRun } from "./save-agent-run";
 
-export type AgentRunOutput = { recommendation: Recommendation; actionLog: ActionLogEntry[] };
+/**
+ * Model-call telemetry from the real agent (agent-core's ModelCallMetadata,
+ * restated structurally because services/ may not import agent-core; app/
+ * is where the two are type-checked against each other). Transient: handed
+ * back to the caller, never saved.
+ */
+export type ModelCallTelemetry = {
+  status: "succeeded" | "failed";
+  failureKind?: string;
+  attemptCount: number;
+  latencyMs: number;
+  totalTokens: number | null;
+  providerRequestId?: string;
+  model?: string;
+  finishReason?: string | null;
+};
+
+export type AgentRunOutput = {
+  recommendation: Recommendation;
+  actionLog: ActionLogEntry[];
+  /** Absent from the mock agent, which makes no model call. */
+  modelCallMetadata?: ModelCallTelemetry | null;
+};
 
 export type RunAgentDeps = {
   now: () => Date;
@@ -19,7 +41,14 @@ export type RunAgentDeps = {
 };
 
 export type RunAgentResult =
-  | { ok: true; recommendation: Recommendation; actionLog: ActionLogEntry[]; approval: ApprovalRequest }
+  | {
+      ok: true;
+      recommendation: Recommendation;
+      actionLog: ActionLogEntry[];
+      approval: ApprovalRequest;
+      /** null when no model was called (mock agent). Not part of what was saved. */
+      modelCallMetadata: ModelCallTelemetry | null;
+    }
   | { ok: false; reason: "not_found" | "not_ready" };
 
 const RUNNABLE_STATUSES: readonly string[] = ["received", "gathering"];
@@ -30,15 +59,16 @@ export async function runAgentForDispute(disputeId: string, deps: RunAgentDeps):
   // Cheap early exit; saveAgentRun re-checks atomically, so this is not the guard.
   if (!RUNNABLE_STATUSES.includes(dispute.status)) return { ok: false, reason: "not_ready" };
 
-  const run = await (deps.runAgent ?? runMockAgent)(dispute, deps);
+  const run: AgentRunOutput = await (deps.runAgent ?? runMockAgent)(dispute, deps);
   try {
+    // Only the persisted parts are passed on; the telemetry skips the database.
     const saved = await saveAgentRun({
       disputeId,
       recommendation: run.recommendation,
       actionLog: run.actionLog,
       approval: { id: deps.createId(), requestedAt: deps.now().toISOString() },
     });
-    return { ok: true, ...saved };
+    return { ok: true, ...saved, modelCallMetadata: run.modelCallMetadata ?? null };
   } catch (err) {
     // Lost a race with another run, or the dispute vanished between read and save.
     if (err instanceof DisputeNotReadyError) return { ok: false, reason: "not_ready" };

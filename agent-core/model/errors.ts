@@ -1,26 +1,32 @@
 import type { ResponseMetadata } from "./types";
 
-export type ModelErrorKind =
+/** Every failure kind, as a runtime list so telemetry can be checked against it. */
+export const MODEL_ERROR_KINDS = [
   // Configuration and request
-  | "missing_api_key"
-  | "invalid_request"
+  "missing_api_key",
+  "invalid_request",
   // HTTP and transport
-  | "auth_failed"
-  | "quota_exhausted"
-  | "rate_limited"
-  | "provider_error"
-  | "network_error"
-  | "timeout"
+  "auth_failed",
+  "quota_exhausted",
+  "rate_limited",
+  "provider_error",
+  "network_error",
+  "timeout",
+  // The total call budget ran out: an attempt was cut short or a retry did not fit.
+  "budget_exhausted",
   // Response envelope
-  | "empty_response"
-  | "invalid_envelope"
-  | "truncated"
-  | "unexpected_finish_reason"
+  "empty_response",
+  "invalid_envelope",
+  "truncated",
+  "unexpected_finish_reason",
   // Model output
-  | "invalid_json"
-  | "schema_validation_failed"
-  | "invalid_tool_call"
-  | "unknown_tool";
+  "invalid_json",
+  "schema_validation_failed",
+  "invalid_tool_call",
+  "unknown_tool",
+] as const;
+
+export type ModelErrorKind = (typeof MODEL_ERROR_KINDS)[number];
 
 /** Path and message only; never the rejected value, which may echo evidence. */
 export type ValidationIssue = { path: string; message: string };
@@ -30,7 +36,10 @@ export type ModelErrorDetails = {
   status?: number;
   providerCode?: string;
   providerRequestId?: string;
-  attempts?: number;
+  /** Provider attempts actually made; 0 when the call failed before the network. */
+  attemptCount?: number;
+  /** Elapsed time of the whole call up to the failure, including backoff. */
+  latencyMs?: number;
   retryAfterMs?: number;
   /** Present when Sarvam returned a 200 that failed validation. */
   metadata?: ResponseMetadata;
@@ -49,7 +58,8 @@ export class ModelError extends Error {
   readonly status?: number;
   readonly providerCode?: string;
   readonly providerRequestId?: string;
-  readonly attempts: number;
+  readonly attemptCount: number;
+  readonly latencyMs: number;
   readonly retryAfterMs?: number;
   readonly metadata?: ResponseMetadata;
   readonly issues?: ValidationIssue[];
@@ -63,7 +73,8 @@ export class ModelError extends Error {
     this.status = details.status;
     this.providerCode = details.providerCode;
     this.providerRequestId = details.providerRequestId;
-    this.attempts = details.attempts ?? 0;
+    this.attemptCount = details.attemptCount ?? 0;
+    this.latencyMs = details.latencyMs ?? 0;
     this.retryAfterMs = details.retryAfterMs;
     this.metadata = details.metadata;
     this.issues = details.issues;
@@ -79,7 +90,8 @@ export class ModelError extends Error {
       status: this.status,
       providerCode: this.providerCode,
       providerRequestId: this.providerRequestId,
-      attempts: this.attempts,
+      attemptCount: this.attemptCount,
+      latencyMs: this.latencyMs,
       retryAfterMs: this.retryAfterMs,
       metadata: this.metadata,
       issues: this.issues,

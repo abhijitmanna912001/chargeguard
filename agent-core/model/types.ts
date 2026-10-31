@@ -133,9 +133,10 @@ export type ResponseMetadata = {
   model?: string;
   finishReason?: string | null;
   usage?: TokenUsage;
-  /** Latency of the attempt that produced this response. */
+  /** Elapsed time of the whole call: every attempt, body reads and backoff. */
   latencyMs: number;
-  attempts: number;
+  /** Provider attempts actually made, including failed ones before this response. */
+  attemptCount: number;
 };
 
 export type StructuredOutput<T> = {

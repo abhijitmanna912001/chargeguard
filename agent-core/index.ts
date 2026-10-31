@@ -1,4 +1,5 @@
 export { runAgent, type AgentRunResult, type RunAgentDependencies } from "./run-agent";
+export type { ModelCallMetadata } from "./model/telemetry";
 export { InvalidDisputeError } from "./errors";
 export {
   AMOUNT_ESCALATION_THRESHOLD_PAISE,
