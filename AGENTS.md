@@ -7,3 +7,47 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Project summary
+
+ChargeGuard is an AI merchant-support teammate for payment disputes (chargebacks), built for Paytm Build Track 3. It uses synthetic data only. A submitted response is not a won dispute; never describe or label it as one.
+
+## Folder layout and dependency rule
+
+- `contracts/` — shared types and Zod schemas. Imports nothing.
+- `agent-core/` — dispute logic, rules, model orchestration. Imports `contracts/` only.
+- `app/` — Next.js UI and Server Actions. Imports both `contracts/` and `agent-core/`.
+- Never import in the reverse direction (`contracts/` must not import `agent-core/` or `app/`; `agent-core/` must not import `app/`).
+
+## Next.js rules
+
+- Server Components by default; Client Components only for interaction.
+- Zod-validate input on every Server Action.
+- Dynamic data goes inside `Suspense`, with a `loading.tsx`.
+- Never cache dispute status.
+- Agent code lives in `server-only` modules.
+
+## Engineering rules
+
+- Separation of concerns; keep modules small, typed, and testable.
+- One interface per outside dependency. All Sarvam calls go through a single function.
+- Validate every boundary with Zod.
+- Use timeouts and limited retries, with an escalation fallback when they run out.
+- Idempotent submission: persistent idempotency key plus a database unique constraint; check existing status before retrying.
+- Write an audit trail entry for every decision.
+- Secrets only in env vars.
+- Always cap `max_tokens`.
+- Deterministic rules decide the final action; the model only recommends.
+- Write tests for decision logic.
+- Keep it simple.
+
+## Secrets
+
+- Never commit keys.
+- `.env.local` is git-ignored.
+- `.env.example` holds placeholders only.
+
+## How to work
+
+- Explain tradeoffs before writing code.
+- Keep changes small.
