@@ -1,13 +1,20 @@
 import { CircleCheck, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import type { Dispute } from "@/contracts";
+import type { Dispute, Recommendation } from "@/contracts";
+import { ActionBadge } from "@/components/disputes/ActionBadge";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { formatDeadline, formatPaise, isDeadlineUrgent } from "@/lib/format";
+import { reasonLabel } from "@/lib/reason-codes";
 
-type Props = { disputes: readonly Dispute[]; now: Date };
+type Props = {
+  disputes: readonly Dispute[];
+  now: Date;
+  /** Latest stored recommendation per dispute id. A dispute with none shows no badge. */
+  recommendations?: ReadonlyMap<string, Recommendation>;
+};
 
-export function NeedsDecisionList({ disputes, now }: Props) {
+export function NeedsDecisionList({ disputes, now, recommendations }: Props) {
   if (disputes.length === 0) {
     return (
       <EmptyState
@@ -21,6 +28,7 @@ export function NeedsDecisionList({ disputes, now }: Props) {
     <Card as="ul" className="divide-y divide-line">
       {disputes.map((d) => {
         const urgent = isDeadlineUrgent(d.deadline, now);
+        const recommendation = recommendations?.get(d.id);
         return (
           <li key={d.id}>
             <Link
@@ -29,7 +37,12 @@ export function NeedsDecisionList({ disputes, now }: Props) {
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate font-mono text-sm font-semibold">{d.id}</p>
-                <p className="mt-1 text-sm text-ink-muted">Reason code {d.reasonCode}</p>
+                <p className="mt-1 text-sm text-ink-muted">{reasonLabel(d.reasonCode)}</p>
+                {recommendation && (
+                  <p className="mt-2 flex items-center gap-2 text-xs text-ink-muted">
+                    Agent recommends <ActionBadge action={recommendation.finalAction} />
+                  </p>
+                )}
               </div>
               <div className="shrink-0 text-right">
                 <p className="text-sm font-semibold tabular-nums">{formatPaise(d.amount)}</p>

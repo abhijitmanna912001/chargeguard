@@ -66,3 +66,16 @@ export function isDeadlineUrgent(isoString: string, now: Date): boolean {
   }
   return diff < 2 * DAY;
 }
+
+const PAISE_IN_TEXT = /\b(\d+) of (\d+) paise\b|\b(\d+) paise\b/g;
+
+/**
+ * Display only: rewrites "4500000 paise" in a stored message as "₹45,000.00",
+ * and "100 of 4500000 paise" as "₹1.00 of ₹45,000.00". The stored text is never
+ * changed. Numbers not followed by "paise" are left alone.
+ */
+export function formatPaiseInText(text: string): string {
+  return text.replace(PAISE_IN_TEXT, (_m, a?: string, b?: string, only?: string) =>
+    only !== undefined ? formatPaise(Number(only)) : `${formatPaise(Number(a))} of ${formatPaise(Number(b))}`,
+  );
+}

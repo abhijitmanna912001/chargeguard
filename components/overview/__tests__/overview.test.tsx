@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ActionLogEntry, Dispute } from "@/contracts";
+import type { ActionLogEntry, Dispute, Recommendation } from "@/contracts";
 import { NeedsDecisionList } from "../NeedsDecisionList";
 import { RecentActivity } from "../RecentActivity";
 import { StatusTiles } from "../StatusTiles";
@@ -33,9 +33,20 @@ describe("NeedsDecisionList", () => {
     const first = screen.getByRole("link", { name: /dsp_1/ });
     expect(first).toHaveAttribute("href", "/disputes/dsp_1");
     expect(within(first).getByText("₹2,499.00")).toBeInTheDocument();
-    expect(within(first).getByText("Reason code 13.1")).toBeInTheDocument();
+    expect(within(first).getByText("Goods not received (13.1)")).toBeInTheDocument();
     expect(within(first).getByText("1 day left")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /dsp_2/ })).toHaveAttribute("href", "/disputes/dsp_2");
+  });
+});
+
+describe("NeedsDecisionList recommendation badge", () => {
+  const rec: Recommendation = {
+    id: "r1", disputeId: "dsp_1", createdAt: "2026-11-01T00:00:00.000Z", modelOutput: null, finalAction: "escalate", flags: ["model_failure"],
+  };
+  it("shows the latest recommendation for the dispute that has one, and none for the other", () => {
+    render(<NeedsDecisionList disputes={[dispute("dsp_1", "2026-11-20T00:00:00.000Z"), dispute("dsp_2", "2026-11-21T00:00:00.000Z")]} now={now} recommendations={new Map([["dsp_1", rec]])} />);
+    expect(within(screen.getByRole("link", { name: /dsp_1/ })).getByText("Escalate")).toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: /dsp_2/ })).queryByText("Escalate")).not.toBeInTheDocument();
   });
 });
 
@@ -63,6 +74,11 @@ describe("RecentActivity", () => {
   it("shows the empty state", () => {
     render(<RecentActivity entries={[]} />);
     expect(screen.getByText("No agent activity yet")).toBeInTheDocument();
+  });
+
+  it("shows paise amounts in the message as rupees", () => {
+    render(<RecentActivity entries={[{ ...entry, summary: "Amount 4500000 paise is above the 1000000 paise limit" }]} />);
+    expect(screen.getByText("Amount ₹45,000.00 is above the ₹10,000.00 limit")).toBeInTheDocument();
   });
 
   it("names the actor in text and links to the dispute", () => {

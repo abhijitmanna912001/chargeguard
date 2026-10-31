@@ -1,26 +1,20 @@
+import { ArrowUpRight, Check, ShieldCheck, type LucideIcon } from "lucide-react";
 import type { Action } from "@/contracts";
+import { TONE_CLASSES, type Tone } from "@/components/ui/tones";
 
-const ACTION: Record<Action, { label: string; className: string }> = {
-  defend: {
-    label: "Defend",
-    className: "border-indigo-500 bg-indigo-50 text-indigo-900 dark:border-indigo-400 dark:bg-indigo-950 dark:text-indigo-100",
-  },
-  accept: {
-    label: "Accept",
-    className: "border-slate-500 bg-slate-100 text-slate-900 dark:border-slate-400 dark:bg-slate-800 dark:text-slate-100",
-  },
-  escalate: {
-    label: "Escalate",
-    className: "border-orange-500 bg-orange-50 text-orange-900 dark:border-orange-400 dark:bg-orange-950 dark:text-orange-100",
-  },
+const ACTION: Record<Action, { label: string; tone: Tone; Icon: LucideIcon }> = {
+  defend: { label: "Defend", tone: "accent", Icon: ShieldCheck },
+  accept: { label: "Accept", tone: "neutral", Icon: Check },
+  escalate: { label: "Escalate", tone: "caution", Icon: ArrowUpRight },
 };
 
-export function ActionBadge({ action }: { action: Action }) {
-  const { label, className } = ACTION[action];
+/** The recommended action. `lg` is the prominent chip on the dispute page. */
+export function ActionBadge({ action, size = "sm" }: { action: Action; size?: "sm" | "lg" }) {
+  const { label, tone, Icon } = ACTION[action];
+  const sizing = size === "lg" ? "gap-2 px-4 py-1.5 text-base font-semibold" : "gap-1 px-2 py-0.5 text-xs font-medium";
   return (
-    <span
-      className={`inline-flex items-center whitespace-nowrap rounded-md border px-2.5 py-0.5 text-xs font-semibold ${className}`}
-    >
+    <span className={`inline-flex items-center whitespace-nowrap rounded-full border ${sizing} ${TONE_CLASSES[tone]}`}>
+      <Icon aria-hidden="true" className={size === "lg" ? "size-5" : "size-3.5"} />
       {label}
     </span>
   );

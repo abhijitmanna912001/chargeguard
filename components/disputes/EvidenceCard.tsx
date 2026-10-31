@@ -1,4 +1,8 @@
+import { CreditCard, Landmark, MessageSquare, Truck, Undo2, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { Badge } from "@/components/ui/Badge";
+import { Card } from "@/components/ui/Card";
+import { evidenceStatus } from "./evidence-status";
 import type {
   CustomerMessageEvidence,
   DeliveryProofEvidence,
@@ -7,13 +11,13 @@ import type {
   SettlementEvidence,
   TransactionEvidence,
 } from "@/contracts";
-import { channelLabel, languageLabel } from "@/lib/evidence-display";
+import { channelLabel, evidenceTypeLabel, languageLabel } from "@/lib/evidence-display";
 import { formatDateTime, formatPaise, humanizeEnum } from "@/lib/format";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-zinc-600 dark:text-zinc-400">{label}</dt>
+      <dt className="text-ink-muted">{label}</dt>
       <dd className="min-w-0 break-words">{children}</dd>
     </>
   );
@@ -24,11 +28,11 @@ function Time({ iso }: { iso: string }) {
 }
 
 function OptionalTime({ iso }: { iso: string | undefined }) {
-  return iso ? <Time iso={iso} /> : <span className="text-zinc-600 dark:text-zinc-400">Not recorded</span>;
+  return iso ? <Time iso={iso} /> : <span className="text-ink-muted">Not recorded</span>;
 }
 
 function Fields({ children }: { children: ReactNode }) {
-  return <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">{children}</dl>;
+  return <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">{children}</dl>;
 }
 
 function TransactionBody({ evidence }: { evidence: TransactionEvidence }) {
@@ -36,7 +40,6 @@ function TransactionBody({ evidence }: { evidence: TransactionEvidence }) {
     <Fields>
       <Field label="Transaction id"><span className="font-mono">{evidence.transactionId}</span></Field>
       <Field label="Amount">{formatPaise(evidence.amount)}</Field>
-      <Field label="Status">{humanizeEnum(evidence.status)}</Field>
       <Field label="Occurred"><Time iso={evidence.occurredAt} /></Field>
     </Fields>
   );
@@ -47,7 +50,6 @@ function SettlementBody({ evidence }: { evidence: SettlementEvidence }) {
     <Fields>
       <Field label="Settlement id"><span className="font-mono">{evidence.settlementId}</span></Field>
       <Field label="Amount">{formatPaise(evidence.amount)}</Field>
-      <Field label="Status">{humanizeEnum(evidence.status)}</Field>
       <Field label="Settled"><OptionalTime iso={evidence.settledAt} /></Field>
     </Fields>
   );
@@ -57,7 +59,6 @@ function DeliveryProofBody({ evidence }: { evidence: DeliveryProofEvidence }) {
   return (
     <Fields>
       <Field label="Proof type">{humanizeEnum(evidence.kind)}</Field>
-      <Field label="Delivery status">{humanizeEnum(evidence.status)}</Field>
       <Field label="Delivered"><OptionalTime iso={evidence.deliveredAt} /></Field>
       <Field label="Reference"><span className="font-mono">{evidence.reference}</span></Field>
     </Fields>
@@ -75,7 +76,7 @@ function CustomerMessageBody({ evidence }: { evidence: CustomerMessageEvidence }
       {/* lang lets screen readers pronounce non-English messages correctly */}
       <blockquote
         lang={evidence.language}
-        className="whitespace-pre-wrap border-l-4 border-zinc-300 pl-3 text-sm dark:border-zinc-600"
+        className="whitespace-pre-wrap rounded-r-lg border-l-4 border-accent-line bg-canvas px-3 py-2 text-sm italic"
       >
         {evidence.content}
       </blockquote>
@@ -87,7 +88,6 @@ function RefundBody({ evidence }: { evidence: RefundEvidence }) {
   return (
     <Fields>
       <Field label="Amount">{formatPaise(evidence.amount)}</Field>
-      <Field label="Status">{humanizeEnum(evidence.status)}</Field>
       <Field label="Issued"><OptionalTime iso={evidence.issuedAt} /></Field>
     </Fields>
   );
@@ -115,16 +115,33 @@ function EvidenceBody({ evidence }: { evidence: Evidence }) {
   }
 }
 
+const TYPE_ICON: Record<Evidence["type"], LucideIcon> = {
+  transaction: CreditCard,
+  settlement: Landmark,
+  delivery_proof: Truck,
+  customer_message: MessageSquare,
+  refund: Undo2,
+};
+
 export function EvidenceCard({ evidence }: { evidence: Evidence }) {
+  const Icon = TYPE_ICON[evidence.type];
+  const status = evidenceStatus(evidence);
   return (
-    <article className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-      <h4 className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 text-sm font-semibold">
-        <span className="font-mono">{evidence.id}</span>
-        <span className="text-xs font-normal text-zinc-600 dark:text-zinc-400">
-          Collected <Time iso={evidence.collectedAt} />
+    <Card as="article" className="h-full p-4">
+      <header className="mb-3 flex items-start gap-3">
+        <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-canvas text-ink-muted">
+          <Icon className="size-4" />
         </span>
-      </h4>
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-semibold">{evidenceTypeLabel(evidence.type)}</h4>
+          <p className="break-all font-mono text-xs text-ink-muted">{evidence.id}</p>
+        </div>
+        {status && <Badge tone={status.tone}>{status.label}</Badge>}
+      </header>
       <EvidenceBody evidence={evidence} />
-    </article>
+      <p className="mt-3 text-xs text-ink-muted">
+        Collected <Time iso={evidence.collectedAt} />
+      </p>
+    </Card>
   );
 }

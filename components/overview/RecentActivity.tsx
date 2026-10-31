@@ -3,7 +3,7 @@ import type { ActionLogEntry } from "@/contracts";
 import { ActorIcon, ACTOR_LABEL } from "@/components/ui/ActorIcon";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatPaiseInText } from "@/lib/format";
 import { History } from "lucide-react";
 
 export function RecentActivity({ entries }: { entries: readonly ActionLogEntry[] }) {
@@ -27,7 +27,8 @@ export function RecentActivity({ entries }: { entries: readonly ActionLogEntry[]
             <ActorIcon actor={e.actor} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm">{e.summary}</p>
+            {/* Display only: stored text keeps its paise amounts. */}
+            <p className="text-sm">{formatPaiseInText(e.summary)}</p>
             <p className="mt-1 text-xs text-ink-muted">
               {ACTOR_LABEL[e.actor]} ·{" "}
               <Link href={`/disputes/${encodeURIComponent(e.disputeId)}`} className="font-mono underline underline-offset-2 hover:text-ink">

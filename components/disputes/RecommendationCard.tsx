@@ -1,6 +1,10 @@
+import { OctagonAlert } from "lucide-react";
+import { useId } from "react";
 import { BLOCKING_FLAGS, type Flag, type Recommendation } from "@/contracts";
+import { Card } from "@/components/ui/Card";
 import { humanizeEnum } from "@/lib/format";
 import { ActionBadge } from "./ActionBadge";
+import { MockTag } from "./MockTag";
 
 const isBlocking = (flag: Flag) => BLOCKING_FLAGS.includes(flag);
 
@@ -8,20 +12,45 @@ export function hasModelFailure(rec: Recommendation): boolean {
   return rec.modelOutput === null || rec.flags.includes("model_failure");
 }
 
-// Blocking is stated in words ("Blocking") and by border style, never colour alone.
+const heading = "text-xs font-semibold uppercase tracking-wide text-ink-muted";
+
+// Blocking is stated in words ("Blocking"), by a solid fill and an icon, never colour alone.
 function FlagChip({ flag }: { flag: Flag }) {
   const blocking = isBlocking(flag);
   return (
     <li
-      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium ${
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
         blocking
-          ? "border-2 border-red-600 bg-red-50 text-red-900 dark:border-red-400 dark:bg-red-950 dark:text-red-100"
-          : "border-dashed border-zinc-500 text-zinc-800 dark:text-zinc-200"
+          ? "border-danger-solid bg-danger-solid font-semibold text-ink-on"
+          : "border-warning-line bg-warning-bg font-medium text-warning-fg"
       }`}
     >
+      {blocking && <OctagonAlert aria-hidden="true" className="size-3.5" />}
       {humanizeEnum(flag)}
-      {blocking && <span className="font-bold uppercase tracking-wide">· Blocking</span>}
+      {blocking && <span className="font-bold uppercase tracking-wide">Blocking</span>}
     </li>
+  );
+}
+
+/** A labelled meter. The percentage is also written out, so the bar is never the only cue. */
+function ConfidenceMeter({ value }: { value: number }) {
+  const labelId = useId();
+  const pct = Math.round(value * 100);
+  return (
+    <div className="max-w-xs">
+      <p id={labelId} className="text-sm font-medium tabular-nums">{`Confidence ${pct}%`}</p>
+      <div
+        role="meter"
+        aria-labelledby={labelId}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        aria-valuetext={`${pct}%`}
+        className="mt-1.5 h-2 overflow-hidden rounded-full bg-neutral-bg"
+      >
+        <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -31,44 +60,43 @@ export function RecommendationCard({ recommendation, isMock }: { recommendation:
   const hasBlocking = flags.some(isBlocking);
 
   return (
-    <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+    <Card className="space-y-5 p-5">
       <div className="flex flex-wrap items-center gap-3">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-          Agent recommendation
-        </h3>
-        <ActionBadge action={finalAction} />
-        {isMock && (
-          <span className="rounded border border-dashed border-zinc-500 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-            Mock
-          </span>
-        )}
-        {modelOutput && !failed && (
-          <span className="text-sm tabular-nums">Confidence {Math.round(modelOutput.confidence * 100)}%</span>
-        )}
+        <h3 className={heading}>Agent recommendation</h3>
+        {isMock && <MockTag />}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div>
+          <p className="mb-1.5 text-sm text-ink-muted">Recommended action</p>
+          <ActionBadge action={finalAction} size="lg" />
+        </div>
+        {modelOutput && !failed && <ConfidenceMeter value={modelOutput.confidence} />}
       </div>
 
       {failed ? (
-        <p className="mt-3 text-sm font-medium">
+        <p className="text-sm font-medium">
           The agent could not produce a recommendation. This case needs a person to decide.
         </p>
       ) : (
         modelOutput && (
-          <>
-            <p className="mt-3 text-sm">{modelOutput.reasoning}</p>
+          <div>
+            <h4 className={heading}>Rationale</h4>
+            <p className="mt-1.5 max-w-prose text-base leading-relaxed">{modelOutput.reasoning}</p>
             {modelOutput.action !== finalAction && (
-              <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
+              <p className="mt-2 max-w-prose text-sm text-ink-muted">
                 The model suggested {modelOutput.action}, but the rules changed it to {finalAction}
                 {overrideReason ? `: ${overrideReason}` : "."}
               </p>
             )}
-          </>
+          </div>
         )
       )}
 
-      <div className="mt-4">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Flags</h4>
+      <div>
+        <h4 className={heading}>Flags</h4>
         {flags.length === 0 ? (
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">No flags.</p>
+          <p className="mt-1.5 text-sm text-ink-muted">No flags.</p>
         ) : (
           <>
             <ul aria-label="Flags" className="mt-1.5 flex flex-wrap gap-2">
@@ -77,7 +105,7 @@ export function RecommendationCard({ recommendation, isMock }: { recommendation:
               ))}
             </ul>
             {hasBlocking && (
-              <p className="mt-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+              <p className="mt-2 text-sm text-ink-muted">
                 Blocking flags mean the rules do not allow defending this dispute automatically.
               </p>
             )}
@@ -86,19 +114,17 @@ export function RecommendationCard({ recommendation, isMock }: { recommendation:
       </div>
 
       {modelOutput && modelOutput.evidenceRefs.length > 0 && (
-        <div className="mt-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
-            Evidence referenced
-          </h4>
+        <div>
+          <h4 className={heading}>Evidence referenced</h4>
           <ul className="mt-1.5 flex flex-wrap gap-2">
             {modelOutput.evidenceRefs.map((ref) => (
-              <li key={ref} className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800">
+              <li key={ref} className="rounded-md border border-line bg-canvas px-2 py-0.5 font-mono text-xs text-ink-muted">
                 {ref}
               </li>
             ))}
           </ul>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

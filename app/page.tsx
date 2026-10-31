@@ -6,22 +6,25 @@ import { OverviewSkeleton } from "@/components/overview/OverviewSkeleton";
 import { RecentActivity } from "@/components/overview/RecentActivity";
 import { StatusTiles } from "@/components/overview/StatusTiles";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { listRecentActionLog } from "@/lib/db/repositories/action-log";
+import { PageShell } from "@/components/ui/PageShell";
+import { listRecentActionLogPerDispute } from "@/lib/db/repositories/action-log";
 import { listDisputesByStatus } from "@/lib/db/repositories/disputes";
 import { countDisputesByStatus } from "@/lib/db/repositories/metrics";
+import { getLatestRecommendations } from "@/lib/db/repositories/recommendations";
 
 export const metadata: Metadata = {
   title: "Overview | ChargeGuard",
 };
 
 const RECENT_ACTIVITY_LIMIT = 8;
+const RECENT_ACTIVITY_PER_DISPUTE = 2;
 
 // The header is static and ships in the prerendered shell. Everything below it
 // streams in behind Suspense. Nothing here uses "use cache": dispute status is
 // never cached.
 export default function OverviewPage() {
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6 lg:px-8">
+    <PageShell>
       <PageHeader
         title="Overview"
         description="What needs your attention, where every dispute stands, and what the agent has been doing."
@@ -29,7 +32,7 @@ export default function OverviewPage() {
       <Suspense fallback={<OverviewSkeleton />}>
         <OverviewLoader />
       </Suspense>
-    </main>
+    </PageShell>
   );
 }
 
@@ -37,15 +40,16 @@ async function OverviewLoader() {
   const [awaiting, counts, activity] = await Promise.all([
     listDisputesByStatus("awaiting_approval"),
     countDisputesByStatus(),
-    listRecentActionLog(RECENT_ACTIVITY_LIMIT),
+    listRecentActionLogPerDispute(RECENT_ACTIVITY_PER_DISPUTE, RECENT_ACTIVITY_LIMIT),
   ]);
+  const recommendations = await getLatestRecommendations(awaiting.map((d) => d.id));
   // Read the clock after the awaits so it is a request-time value.
   const now = new Date();
   return (
     <div className="space-y-8">
       <section aria-labelledby="needs-decision-heading" className="space-y-3">
         <h2 id="needs-decision-heading" className="text-lg font-semibold">Needs your decision</h2>
-        <NeedsDecisionList disputes={awaiting} now={now} />
+        <NeedsDecisionList disputes={awaiting} now={now} recommendations={recommendations} />
       </section>
       <section aria-labelledby="status-heading" className="space-y-3">
         <h2 id="status-heading" className="text-lg font-semibold">Disputes by status</h2>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatDeadline, formatPaise, humanizeEnum, isDeadlineUrgent } from "./format";
+import { formatDateTime, formatDeadline, formatPaise, formatPaiseInText, humanizeEnum, isDeadlineUrgent } from "./format";
 
 describe("formatPaise", () => {
   it("formats rupees with en-IN grouping and two decimals", () => {
@@ -79,5 +79,22 @@ describe("isDeadlineUrgent", () => {
   });
   it("throws on an invalid date", () => {
     expect(() => isDeadlineUrgent("nope", now)).toThrow();
+  });
+});
+
+describe("formatPaiseInText", () => {
+  it("rewrites every paise amount as rupees", () => {
+    expect(formatPaiseInText("Amount 4500000 paise is above the 1000000 paise limit")).toBe(
+      "Amount ₹45,000.00 is above the ₹10,000.00 limit",
+    );
+  });
+  it("handles 'X of Y paise'", () => {
+    expect(formatPaiseInText("Refunds issued: 100 of 4500000 paise disputed (partial)")).toBe(
+      "Refunds issued: ₹1.00 of ₹45,000.00 disputed (partial)",
+    );
+  });
+  it("leaves other numbers and text alone", () => {
+    expect(formatPaiseInText("Deadline in 296 hour(s); 2 evidence record(s)")).toBe("Deadline in 296 hour(s); 2 evidence record(s)");
+    expect(formatPaiseInText("")).toBe("");
   });
 });

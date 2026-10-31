@@ -25,14 +25,14 @@ type Props = {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <section aria-labelledby="agent-panel-heading" className="mt-10">
+    <section aria-labelledby="agent-panel-heading">
       <h2 id="agent-panel-heading" className="text-lg font-semibold">Agent</h2>
-      <div className="mt-3">{children}</div>
+      <div className="mt-3 space-y-4">{children}</div>
     </section>
   );
 }
 
-const muted = "text-sm text-zinc-600 dark:text-zinc-400";
+const muted = "text-sm text-ink-muted";
 
 // Reads live status every render (no "use cache"): a stale status could show a
 // decision form for an already-decided dispute.
@@ -44,7 +44,7 @@ export async function AgentPanel({ disputeId, runAgent, resolveApproval, submitD
   if (status === "received" || status === "gathering") {
     return (
       <Shell>
-        <p className="text-sm">
+        <p className="max-w-prose text-sm">
           The agent has not looked at this dispute yet. Running it gathers the evidence, recommends whether to defend,
           accept or escalate, and then waits for your approval. Nothing is sent to the network.
         </p>
@@ -99,7 +99,7 @@ export async function AgentPanel({ disputeId, runAgent, resolveApproval, submitD
               <div>
                 <DefensePackageCard pkg={buildDefensePackage(dispute, defendRecommendation)} />
                 {submission?.status === "failed" && (
-                  <p role="alert" className="mt-3 text-sm font-medium text-red-800 dark:text-red-300">
+                  <p role="alert" className="mt-3 text-sm font-medium text-danger-fg">
                     The last simulated submission failed: {submission.errorMessage ?? "no reason recorded"}
                   </p>
                 )}

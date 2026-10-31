@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { PageShell } from "@/components/ui/PageShell";
 import { EvalSection } from "@/components/metrics/EvalSection";
 import { MetricsSkeleton } from "@/components/metrics/MetricsSkeleton";
 import { OperationsSection } from "@/components/metrics/OperationsSection";
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
 // database. Nothing here uses "use cache".
 export default function MetricsPage() {
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+    <PageShell>
       <h1 className="text-2xl font-semibold tracking-tight">Metrics</h1>
 
       <section aria-labelledby="eval-heading" className="mt-8">
@@ -39,7 +40,7 @@ export default function MetricsPage() {
           <OperationsLoader />
         </Suspense>
       </section>
-    </main>
+    </PageShell>
   );
 }
 

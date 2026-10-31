@@ -1,7 +1,7 @@
 import { Loader2 } from "lucide-react";
 import type { ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "danger" | "danger-ghost";
 
 const BASE =
   "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-60";
@@ -9,6 +9,8 @@ const BASE =
 const VARIANT: Record<ButtonVariant, string> = {
   primary: "border-ink bg-ink text-ink-on hover:bg-ink-hover",
   secondary: "border-field-line bg-surface text-ink hover:bg-canvas",
+  // Borderless text button in the danger colour: reads as "step away", not as a peer of the main choices.
+  "danger-ghost": "border-transparent bg-transparent text-danger-fg hover:bg-danger-bg",
   danger: "border-danger-solid bg-danger-solid text-ink-on hover:bg-danger-solid-hover",
 };
 

@@ -76,22 +76,68 @@ describe("ApprovalForm submission", () => {
   });
 });
 
-describe("blocking flag override warning", () => {
-  it("is shown near Defend, naming the flags, when a blocking flag is present", () => {
+describe("blocking flag override: confirm before defending", () => {
+  it("shows nothing until Defend is selected, then warns naming the blocking flags only", async () => {
     setup("escalate", ["missing_evidence", "deadline_at_risk"], okAction());
+    expect(screen.queryByText(/defending overrides/i)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Defend" }));
     const warning = screen.getByText(/defending overrides/i);
     expect(warning).toHaveTextContent("Warning:");
     expect(warning).toHaveTextContent("Missing evidence");
     expect(warning).not.toHaveTextContent("Deadline at risk"); // not a blocking flag
-    expect(screen.getByRole("button", { name: "Defend" })).toHaveAccessibleDescription(/defending overrides/i);
-    expect(screen.getByRole("button", { name: "Defend" })).toBeEnabled(); // warns, does not block
+    expect(screen.getByRole("button", { name: "Defend" })).toHaveAttribute("aria-expanded", "true");
   });
-  it("is absent without blocking flags", () => {
-    setup("escalate", ["deadline_at_risk"], okAction());
+
+  it("does not submit on Defend; the confirm button stays disabled until the checkbox is ticked", async () => {
+    const action = okAction();
+    setup("escalate", ["missing_evidence"], action);
+    await userEvent.click(screen.getByRole("button", { name: "Defend" }));
+    expect(action).not.toHaveBeenCalled();
+    const confirm = screen.getByRole("button", { name: "Confirm and defend" });
+    expect(confirm).toBeDisabled();
+    await userEvent.click(screen.getByRole("checkbox", { name: /I understand the rules advise against defending this dispute/ }));
+    expect(confirm).toBeEnabled();
+    await userEvent.click(confirm);
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    const fd = (action as ReturnType<typeof vi.fn>).mock.calls[0][1] as FormData;
+    expect(Object.fromEntries(fd)).toMatchObject({ choice: "approve:defend" });
+    expect(fd.has("understood")).toBe(false); // the checkbox is UX only, never sent
+  });
+
+  it("Cancel hides the warning and clears the checkbox", async () => {
+    setup("escalate", ["missing_evidence"], okAction());
+    await userEvent.click(screen.getByRole("button", { name: "Defend" }));
+    await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(/defending overrides/i)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Defend" }));
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+  });
+
+  it("Accept and Reject are not gated by the warning", async () => {
+    const action = okAction();
+    setup("escalate", ["missing_evidence"], action);
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+  });
+
+  it("Defend submits straight away when there is no blocking flag", async () => {
+    const action = okAction();
+    setup("escalate", ["deadline_at_risk"], action);
+    await userEvent.click(screen.getByRole("button", { name: "Defend" }));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
     expect(screen.queryByText(/defending overrides/i)).not.toBeInTheDocument();
   });
-  it("is absent for an accept proposal even with blocking flags", () => {
+
+  it("never shows the warning for an accept proposal, even with blocking flags", () => {
     setup("accept", ["missing_evidence"], okAction());
     expect(screen.queryByText(/defending overrides/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Defend" })).not.toBeInTheDocument();
+  });
+
+  it("titles the panel and says the human decides", () => {
+    setup("escalate", [], okAction());
+    expect(screen.getByRole("heading", { name: "Your decision" })).toBeInTheDocument();
+    expect(screen.getByText(/agent only recommends/i)).toBeInTheDocument();
   });
 });

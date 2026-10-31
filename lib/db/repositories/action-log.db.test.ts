@@ -77,4 +77,14 @@ describe.skipIf(!TEST_URL)("action log repository (database)", () => {
       await expect(repo.listRecentActionLog(bad)).rejects.toThrow(RangeError);
     }
   });
+
+  it("lists recent entries with at most N per dispute", async () => {
+    await repo.appendActionLog(entry("a1", "d1", "2026-11-05T10:00:01.000Z"));
+    await repo.appendActionLog(entry("a2", "d1", "2026-11-05T10:00:02.000Z"));
+    await repo.appendActionLog(entry("a3", "d1", "2026-11-05T10:00:03.000Z"));
+    await repo.appendActionLog(entry("b1", "d2", "2026-11-05T10:00:00.000Z"));
+    expect((await repo.listRecentActionLogPerDispute(2, 10)).map((e) => e.id)).toEqual(["a3", "a2", "b1"]);
+    expect((await repo.listRecentActionLogPerDispute(2, 2)).map((e) => e.id)).toEqual(["a3", "a2"]);
+    await expect(repo.listRecentActionLogPerDispute(0, 5)).rejects.toThrow(RangeError);
+  });
 });
