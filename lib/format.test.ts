@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatDeadline, formatPaise, humanizeEnum } from "./format";
+import { formatDateTime, formatDeadline, formatPaise, humanizeEnum, isDeadlineUrgent } from "./format";
 
 describe("formatPaise", () => {
   it("formats rupees with en-IN grouping and two decimals", () => {
@@ -64,5 +64,20 @@ describe("formatDateTime", () => {
   });
   it("throws on an invalid date", () => {
     expect(() => formatDateTime("nope")).toThrow();
+  });
+});
+
+describe("isDeadlineUrgent", () => {
+  const now = new Date("2026-11-01T00:00:00.000Z");
+  it("is urgent under 48 hours and when overdue", () => {
+    expect(isDeadlineUrgent("2026-11-02T23:59:00.000Z", now)).toBe(true);
+    expect(isDeadlineUrgent("2026-10-31T00:00:00.000Z", now)).toBe(true);
+  });
+  it("is not urgent at exactly 48 hours or later", () => {
+    expect(isDeadlineUrgent("2026-11-03T00:00:00.000Z", now)).toBe(false);
+    expect(isDeadlineUrgent("2026-11-20T00:00:00.000Z", now)).toBe(false);
+  });
+  it("throws on an invalid date", () => {
+    expect(() => isDeadlineUrgent("nope", now)).toThrow();
   });
 });

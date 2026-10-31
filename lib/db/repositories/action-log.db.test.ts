@@ -61,4 +61,20 @@ describe.skipIf(!TEST_URL)("action log repository (database)", () => {
     expect(list.map((e) => e.id)).toEqual(["x1"]);
     expect(list[0]).not.toHaveProperty("seq");
   });
+
+  it("lists the newest entries across disputes, newest first, capped by limit", async () => {
+    await repo.appendActionLog(entry("old", "d1", "2026-11-05T10:00:00.000Z"));
+    await repo.appendActionLog(entry("mid_b", "d2", "2026-11-05T10:00:05.000Z"));
+    await repo.appendActionLog(entry("mid_a", "d1", "2026-11-05T10:00:05.000Z"));
+    await repo.appendActionLog(entry("new", "d2", "2026-11-05T10:00:09.000Z"));
+
+    expect((await repo.listRecentActionLog(10)).map((e) => e.id)).toEqual(["new", "mid_a", "mid_b", "old"]);
+    expect((await repo.listRecentActionLog(2)).map((e) => e.id)).toEqual(["new", "mid_a"]);
+  });
+
+  it("rejects a limit that is not an integer from 1 to 100", async () => {
+    for (const bad of [0, -1, 1.5, 101, Number.NaN]) {
+      await expect(repo.listRecentActionLog(bad)).rejects.toThrow(RangeError);
+    }
+  });
 });

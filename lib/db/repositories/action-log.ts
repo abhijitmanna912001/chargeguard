@@ -29,3 +29,21 @@ export async function listActionLog(
   });
   return rows.map(actionLogFromRow);
 }
+
+/**
+ * The newest entries across all disputes, newest first (seq breaks timestamp
+ * ties). One query, capped: limit must be an integer from 1 to 100.
+ */
+export async function listRecentActionLog(
+  limit: number,
+  db: DbClient = prisma,
+): Promise<ActionLogEntry[]> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new RangeError("limit must be an integer from 1 to 100");
+  }
+  const rows = await db.actionLog.findMany({
+    orderBy: [{ timestamp: "desc" }, { seq: "desc" }],
+    take: limit,
+  });
+  return rows.map(actionLogFromRow);
+}

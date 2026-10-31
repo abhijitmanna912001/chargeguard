@@ -57,3 +57,12 @@ export function formatDateTime(isoString: string): string {
   }
   return `${dateTime.format(date)} IST`;
 }
+
+/** True when the deadline is still ahead but less than 48 hours away, or already past. */
+export function isDeadlineUrgent(isoString: string, now: Date): boolean {
+  const diff = new Date(isoString).getTime() - now.getTime();
+  if (Number.isNaN(diff)) {
+    throw new Error(`Invalid deadline: ${isoString}`);
+  }
+  return diff < 2 * DAY;
+}

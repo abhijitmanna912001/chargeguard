@@ -11,12 +11,14 @@
     "test:db": "node scripts/test-db.mjs",
     "db:seed": "tsx --conditions react-server lib/db/seed.ts",
     "db:reset-demo": "node scripts/reset-demo.mjs",
-    "smoke:sarvam": "node --env-file-if-exists=.env.local scripts/sarvam-smoke.mts"
+    "smoke:sarvam": "node --env-file-if-exists=.env.local scripts/sarvam-smoke.mts",
+    "ui:check": "tsx scripts/ui-check.mts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "dotenv": "^18.0.9",
+    "lucide-react": "^1.66.0",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -24,6 +26,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/turbopack": "^4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

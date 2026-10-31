@@ -23,6 +23,19 @@ export async function listDisputes(db: DbClient = prisma): Promise<Dispute[]> {
   return rows.map(disputeFromRow);
 }
 
+/** Disputes in one status, most urgent deadline first. One query. */
+export async function listDisputesByStatus(
+  status: DisputeStatus,
+  db: DbClient = prisma,
+): Promise<Dispute[]> {
+  const rows = await db.dispute.findMany({
+    where: { status: DisputeStatusSchema.parse(status) },
+    orderBy: [{ deadline: "asc" }, { id: "asc" }],
+    include: withEvidence,
+  });
+  return rows.map(disputeFromRow);
+}
+
 /** Throws if the dispute does not exist or the status is not a valid DisputeStatus. */
 export async function updateDisputeStatus(
   id: string,

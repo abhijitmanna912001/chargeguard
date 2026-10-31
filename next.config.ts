@@ -7,11 +7,6 @@ const nextConfig: NextConfig = {
   },
   cacheComponents: true,
   partialPrefetching: true,
-  // Redirect before rendering. redirect() in a page throws NEXT_REDIRECT, which
-  // stops Next from rendering (and validating) the "/" segment.
-  async redirects() {
-    return [{ source: "/", destination: "/disputes", permanent: false }];
-  },
   turbopack: {
     rules: {
       "*.css": {
