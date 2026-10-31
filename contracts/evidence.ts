@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { IdSchema, IsoDateTimeSchema, PaiseSchema } from "./common";
 
+export const TransactionStatusSchema = z.enum(["success", "failed", "pending"]);
+export const SettlementStatusSchema = z.enum(["settled", "pending", "failed"]);
+export const RefundStatusSchema = z.enum(["issued", "pending", "failed"]);
+export const MessageChannelSchema = z.enum(["whatsapp", "sms", "email", "call"]);
+
 const base = {
   id: IdSchema,
   disputeId: IdSchema,
@@ -12,7 +17,7 @@ export const TransactionEvidenceSchema = z.object({
   type: z.literal("transaction"),
   transactionId: IdSchema,
   amount: PaiseSchema,
-  status: z.string().min(1),
+  status: TransactionStatusSchema,
   occurredAt: IsoDateTimeSchema,
 });
 
@@ -21,7 +26,7 @@ export const SettlementEvidenceSchema = z.object({
   type: z.literal("settlement"),
   settlementId: IdSchema,
   amount: PaiseSchema,
-  status: z.string().min(1),
+  status: SettlementStatusSchema,
   settledAt: IsoDateTimeSchema,
 });
 
@@ -42,7 +47,7 @@ export const DeliveryProofEvidenceSchema = z.object({
 export const CustomerMessageEvidenceSchema = z.object({
   ...base,
   type: z.literal("customer_message"),
-  channel: z.string().min(1),
+  channel: MessageChannelSchema,
   sentAt: IsoDateTimeSchema,
   content: z.string(),
   language: z.string().min(1),
@@ -52,7 +57,7 @@ export const RefundEvidenceSchema = z.object({
   ...base,
   type: z.literal("refund"),
   amount: PaiseSchema,
-  status: z.string().min(1),
+  status: RefundStatusSchema,
   issuedAt: IsoDateTimeSchema,
 });
 

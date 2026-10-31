@@ -29,6 +29,7 @@ export const ActionLogEntrySchema = z.object({
   summary: z.string(),
   evidenceRefs: z.array(IdSchema),
   confidence: z.number().min(0).max(1).optional(),
+  ruleId: IdSchema.optional(),
   outcome: z.string(),
 });
 export type ActionLogEntry = z.infer<typeof ActionLogEntrySchema>;
