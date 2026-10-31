@@ -16,8 +16,10 @@ ChargeGuard is an AI merchant-support teammate for payment disputes (chargebacks
 
 - `contracts/` — shared types and Zod schemas. Imports nothing.
 - `agent-core/` — dispute logic, rules, model orchestration. Imports `contracts/` only.
-- `app/` — Next.js UI and Server Actions. Imports both `contracts/` and `agent-core/`.
-- Never import in the reverse direction (`contracts/` must not import `agent-core/` or `app/`; `agent-core/` must not import `app/`).
+- `lib/db/` — database access (Prisma repositories and mappers). Imports `contracts/` and its own generated client (`lib/db/generated/`) only.
+- `app/` — Next.js UI and Server Actions. Imports `lib/db/`, `contracts/` and `agent-core/`.
+- Never import in the reverse direction (`contracts/` must not import `agent-core/`, `lib/db/` or `app/`; `agent-core/` must not import `lib/db/` or `app/`; `lib/db/` must not import `agent-core/` or `app/`).
+- The generated Prisma client is git-ignored. After pulling, run `npx prisma generate`.
 
 ## Next.js rules
 
@@ -39,6 +41,8 @@ ChargeGuard is an AI merchant-support teammate for payment disputes (chargebacks
 - Always cap `max_tokens`.
 - Deterministic rules decide the final action; the model only recommends.
 - Write tests for decision logic.
+- Check current Prisma docs before writing Prisma code.
+- Only `lib/db/` may import the Prisma client; the ActionLog repository stays append and list only.
 - Keep it simple.
 
 ## Secrets
