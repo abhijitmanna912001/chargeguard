@@ -24,7 +24,7 @@ import {
 } from "./decision-policy";
 import { InvalidDisputeError } from "./errors";
 import { assessEvidence, type EvidenceAssessment } from "./evidence";
-import { callSarvam, ModelError } from "./model";
+import { ModelError } from "./model/errors";
 import type { StructuredCallSarvam } from "./model/mock";
 import { toIssues } from "./model/parse";
 import { buildModelContext, buildModelRequest } from "./model-context";
@@ -39,12 +39,15 @@ import { buildModelContext, buildModelRequest } from "./model-context";
 // stored Recommendation keeps the model's advisory view next to the rule
 // that overrode it, which is what a reviewer needs to see. Rules still decide.
 
-export type RunAgentDeps = {
+export type RunAgentDependencies = {
+  /**
+   * Required, with no default: the caller chooses the real callSarvam or a
+   * mock (createMockCallSarvam), so runAgent never reaches Sarvam implicitly.
+   */
+  callSarvam: StructuredCallSarvam;
   now: () => Date;
   /** Raw unique id component; runAgent adds the rec_ / log_ prefix. Defaults to crypto.randomUUID. */
   createId?: () => string;
-  /** Defaults to the real callSarvam, which reads SARVAM_API_KEY server-side. */
-  callSarvam?: StructuredCallSarvam;
 };
 
 export type AgentRunResult = {
@@ -58,13 +61,14 @@ export type AgentRunResult = {
  * failures, internal errors) comes back as a schema-valid result: an
  * escalation whenever no usable model output survives.
  */
-export async function runAgent(dispute: Dispute, deps: RunAgentDeps): Promise<AgentRunResult> {
+export async function runAgent(dispute: Dispute, deps: RunAgentDependencies): Promise<AgentRunResult> {
   const parsed = DisputeSchema.safeParse(dispute);
   if (!parsed.success) throw new InvalidDisputeError(toIssues(parsed.error));
 
   const run = startRun(parsed.data, deps);
   try {
-    return await orchestrate(run, deps?.callSarvam ?? callSarvam);
+    // No fallback: a missing callSarvam fails inside recommend() and escalates.
+    return await orchestrate(run, deps?.callSarvam);
   } catch {
     // The exception is dropped on purpose: its message may echo evidence.
     return internalFailure(run);
@@ -93,7 +97,7 @@ type EntryFields = Omit<ActionLogEntry, "id" | "disputeId" | "timestamp">;
 const LATEST_CLOCK_MS = Date.parse("9999-01-01T00:00:00.000Z");
 
 /** Epoch ms from the injected clock, or undefined if it throws or is not a usable date. */
-function readInjectedClock(deps: RunAgentDeps): number | undefined {
+function readInjectedClock(deps: RunAgentDependencies): number | undefined {
   try {
     const ms = deps.now().getTime();
     // Also rejects valid Dates that IsoDateTimeSchema would not accept (e.g. year 20000).
@@ -103,7 +107,7 @@ function readInjectedClock(deps: RunAgentDeps): number | undefined {
   }
 }
 
-function startRun(dispute: Dispute, deps: RunAgentDeps): Run {
+function startRun(dispute: Dispute, deps: RunAgentDependencies): Run {
   const run: Run = {
     dispute,
     startMs: 0,

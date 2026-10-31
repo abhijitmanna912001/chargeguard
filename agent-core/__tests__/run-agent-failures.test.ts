@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ActionLogEntrySchema, RecommendationSchema, type Dispute } from "../../contracts";
 import { decideFinalAction } from "../decision-policy";
 import { assessEvidence } from "../evidence";
@@ -60,8 +60,19 @@ function expectSafeEscalation(r: Awaited<ReturnType<typeof runAgent>>) {
   expect(JSON.stringify(r)).not.toMatch(/kaboom/);
 }
 
+// Backstop: the injected mock is the only model; any network attempt fails.
+const networkGuard = vi.fn<typeof fetch>(async () => {
+  throw new Error("network access is not allowed in unit tests");
+});
+
+beforeEach(() => {
+  vi.stubGlobal("fetch", networkGuard);
+});
+
 afterEach(() => {
+  expect(networkGuard).not.toHaveBeenCalled();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("evidence assessment failure", () => {

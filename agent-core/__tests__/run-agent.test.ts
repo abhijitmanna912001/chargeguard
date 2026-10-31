@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { z } from "zod";
 import {
   ActionLogEntrySchema,
@@ -18,10 +18,11 @@ import {
   runAgent,
   type AgentRunResult,
   type MockReply,
-  type RunAgentDeps,
+  type RunAgentDependencies,
   type StructuredCallSarvam,
 } from "../index";
 import { MAX_TOKENS_CAP, ModelError, type StructuredRequest } from "../model";
+import { parseEnvelope, parseStructured } from "../model/parse";
 import type { ModelContext } from "../model-context";
 
 // Synthetic data only. The model is always a mock; no network, no database.
@@ -111,10 +112,15 @@ function recordingModel(reply: MockReply) {
   return { call, requests };
 }
 
-function makeDeps(callSarvam?: StructuredCallSarvam): RunAgentDeps {
+function makeDeps(callSarvam: StructuredCallSarvam): RunAgentDependencies {
   let n = 0;
-  return { now: () => new Date(NOW), createId: () => `id${++n}`, ...(callSarvam ? { callSarvam } : {}) };
+  return { callSarvam, now: () => new Date(NOW), createId: () => `id${++n}` };
 }
+
+const ids = () => {
+  let n = 0;
+  return () => `id${++n}`;
+};
 
 async function run(dispute: Dispute, reply: MockReply = output()) {
   const model = recordingModel(reply);
@@ -125,7 +131,19 @@ async function run(dispute: Dispute, reply: MockReply = output()) {
 
 const outcomes = (log: ActionLogEntry[]) => log.map((e) => e.outcome);
 
+// Every test injects a mock callSarvam. As a backstop, any network attempt
+// fails loudly instead of reaching Sarvam.
+const networkGuard = vi.fn<typeof fetch>(async () => {
+  throw new Error("network access is not allowed in unit tests");
+});
+
+beforeEach(() => {
+  networkGuard.mockClear();
+  vi.stubGlobal("fetch", networkGuard);
+});
+
 afterEach(() => {
+  expect(networkGuard).not.toHaveBeenCalled();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
@@ -375,23 +393,27 @@ describe("model behaviour", () => {
     expect(JSON.stringify(r)).not.toContain("ev_foreign");
   });
 
-  it("regression: a truncated structured response from the real callSarvam escalates (stubbed fetch)", async () => {
-    vi.stubEnv("SARVAM_API_KEY", "test-key-not-real");
+  it("regression: a truncated structured response (finish_reason=length) escalates", async () => {
+    // A controlled mock that runs the provider's real response parser on a
+    // canned truncated completion, so the finish_reason handling is exercised
+    // without any transport.
     const completion = {
       id: "chatcmpl-test",
       model: "sarvam-105b",
       choices: [{ finish_reason: "length", message: { content: '{"action":"defend","confidence":0.9,"PARTIAL-OUTPUT' } }],
       usage: { prompt_tokens: 900, completion_tokens: MAX_TOKENS_CAP, total_tokens: 900 + MAX_TOKENS_CAP },
     };
-    const fetchSpy = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(completion), { status: 200 }));
-    vi.stubGlobal("fetch", fetchSpy);
+    const requestedMaxTokens: (number | undefined)[] = [];
+    const truncating: StructuredCallSarvam = async <Schema extends z.ZodType>(request: StructuredRequest<Schema>) => {
+      requestedMaxTokens.push(request.maxTokens);
+      const envelope = parseEnvelope(completion, 0, 1);
+      if (!envelope.ok) return envelope;
+      return parseStructured(envelope.choice, request.schema as unknown as z.ZodType<z.output<Schema>>, envelope.metadata);
+    };
 
-    const r = await runAgent(makeDispute(), { now: () => new Date(NOW), createId: makeDeps().createId });
+    const r = await runAgent(makeDispute(), makeDeps(truncating));
 
-    // Not retried: truncation is not transient.
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const sent = JSON.parse(fetchSpy.mock.calls[0][1]!.body as string) as { max_tokens: number };
-    expect(sent.max_tokens).toBe(MAX_TOKENS_CAP);
+    expect(requestedMaxTokens).toEqual([MAX_TOKENS_CAP]);
     expect(r.recommendation).toMatchObject({ modelOutput: null, finalAction: "escalate", flags: ["model_failure"] });
     expect(outcomes(r.actionLog)).toContain("model_failure:truncated");
     expect(JSON.stringify(r)).not.toContain("PARTIAL-OUTPUT");
@@ -406,14 +428,21 @@ describe("model behaviour", () => {
     expect(r.recommendation.finalAction).toBe("defend");
   });
 
-  it("uses the real callSarvam when none is injected (missing key, no network)", async () => {
-    vi.stubEnv("SARVAM_API_KEY", "");
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
-    const r = await runAgent(makeDispute(), { now: () => new Date(NOW), createId: makeDeps().createId });
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(r.recommendation.flags).toEqual(["model_failure"]);
-    expect(outcomes(r.actionLog)).toContain("model_failure:missing_api_key");
+  it("always calls the injected callSarvam, exactly once", async () => {
+    const model = recordingModel(output());
+    await runAgent(makeDispute(), makeDeps(model.call));
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("has no production Sarvam fallback", () => {
+    // @ts-expect-error callSarvam is required.
+    const missing: RunAgentDependencies = { now: () => new Date(NOW) };
+    expect(missing).toBeDefined();
+    // run-agent.ts neither imports the provider module nor calls callSarvam directly.
+    const source = readFileSync(fileURLToPath(new URL("../run-agent.ts", import.meta.url)), "utf8");
+    expect(source).not.toMatch(/from\s+["']\.\/model(\/sarvam|\/index)?["']/);
+    expect(source).not.toMatch(/(?<![.\w])callSarvam\s*\(/);
+    expect(source).toMatch(/deps\?\.callSarvam\)/);
   });
 });
 
@@ -580,7 +609,7 @@ describe("recommendation and action log", () => {
 
   it("monotonic timestamps even if the clock goes backwards", async () => {
     let tick = 0;
-    const deps: RunAgentDeps = {
+    const deps: RunAgentDependencies = {
       now: () => new Date(NOW_MS - 1000 * tick++),
       callSarvam: createMockCallSarvam(output()),
     };
@@ -648,7 +677,7 @@ describe("recommendation and action log", () => {
 
 describe("injected clock", () => {
   const withClock = (now: () => Date) =>
-    runAgent(makeDispute(), { now, createId: makeDeps().createId, callSarvam: createMockCallSarvam(output()) });
+    runAgent(makeDispute(), { now, createId: ids(), callSarvam: createMockCallSarvam(output()) });
 
   function expectValidTimeline(r: AgentRunResult) {
     expect(RecommendationSchema.safeParse(r.recommendation).success).toBe(true);
@@ -713,7 +742,11 @@ describe("injected clock", () => {
     const broken = () => {
       throw new Error("clock");
     };
-    await expect(runAgent(makeDispute({ amount: -1 }), { now: broken })).rejects.toBeInstanceOf(InvalidDisputeError);
+    const model = recordingModel(output());
+    await expect(runAgent(makeDispute({ amount: -1 }), { now: broken, callSarvam: model.call })).rejects.toBeInstanceOf(
+      InvalidDisputeError,
+    );
+    expect(model.requests).toHaveLength(0);
   });
 });
 
@@ -743,11 +776,16 @@ describe("integration", () => {
     for (const item of [input.recommendation, ...input.actionLog]) expect(item.disputeId).toBe(input.disputeId);
   });
 
-  it("accepts the MockAgentDeps shape unchanged", () => {
-    // Same fields as lib/mock/run-agent.ts MockAgentDeps.
+  it("requires callSarvam, so MockAgentDeps alone is no longer enough", () => {
+    // Same fields as lib/mock/run-agent.ts MockAgentDeps, which stays unchanged.
     type MockAgentDepsShape = { now: () => Date; createId?: () => string };
-    expectTypeOf<MockAgentDepsShape>().toExtend<RunAgentDeps>();
-    expectTypeOf<RunAgentDeps["callSarvam"]>().toEqualTypeOf<StructuredCallSarvam | undefined>();
+    expectTypeOf<MockAgentDepsShape>().not.toExtend<RunAgentDependencies>();
+    expectTypeOf<MockAgentDepsShape & { callSarvam: StructuredCallSarvam }>().toExtend<RunAgentDependencies>();
+    expectTypeOf<RunAgentDependencies>().toEqualTypeOf<{
+      callSarvam: StructuredCallSarvam;
+      now: () => Date;
+      createId?: () => string;
+    }>();
   });
 
   it("agent-core imports nothing from lib/, app/, fixtures/ or Prisma", () => {

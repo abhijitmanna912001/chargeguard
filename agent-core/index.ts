@@ -1,4 +1,4 @@
-export { runAgent, type AgentRunResult, type RunAgentDeps } from "./run-agent";
+export { runAgent, type AgentRunResult, type RunAgentDependencies } from "./run-agent";
 export { InvalidDisputeError } from "./errors";
 export {
   AMOUNT_ESCALATION_THRESHOLD_PAISE,
