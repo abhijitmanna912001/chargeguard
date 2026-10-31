@@ -26,3 +26,22 @@ export class AgentRunMismatchError extends Error {
     this.name = "AgentRunMismatchError";
   }
 }
+
+/** The approval exists but belongs to a different dispute than the one named. */
+export class ApprovalDisputeMismatchError extends Error {
+  constructor(
+    readonly approvalId: string,
+    readonly disputeId: string,
+  ) {
+    super(`Approval ${approvalId} does not belong to dispute ${disputeId}`);
+    this.name = "ApprovalDisputeMismatchError";
+  }
+}
+
+/** A human decision that breaks the decision rules (checked before touching the database). */
+export class InvalidDecisionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidDecisionError";
+  }
+}

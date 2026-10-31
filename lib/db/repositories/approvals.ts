@@ -18,6 +18,14 @@ export async function createApprovalRequest(
   return approvalFromRow(row);
 }
 
+export async function getApproval(
+  id: string,
+  db: DbClient = prisma,
+): Promise<ApprovalRequest | null> {
+  const row = await db.approvalRequest.findUnique({ where: { id } });
+  return row ? approvalFromRow(row) : null;
+}
+
 export async function getPendingApproval(
   disputeId: string,
   db: DbClient = prisma,
@@ -39,8 +47,9 @@ export async function resolveApproval(
   id: string,
   resolution: ApprovalResolution,
   db: DbClient = prisma,
+  now: Date = new Date(),
 ): Promise<ApprovalRequest> {
-  const data = approvalResolutionToUpdateData(resolution, new Date());
+  const data = approvalResolutionToUpdateData(resolution, now);
   return runAtomic(db, async (tx) => {
     const { count } = await tx.approvalRequest.updateMany({
       where: { id, status: "pending" },
