@@ -51,6 +51,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # PageProps / LayoutProps and next-env.d.ts are generated, git-ignored
+      # files; a fresh checkout has none until typegen (or dev/build) runs.
+      - name: Generate Next.js route types
+        run: npx next typegen
+
       - name: TypeScript check
         run: npx tsc --noEmit
 
