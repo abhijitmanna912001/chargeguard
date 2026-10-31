@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:db": "node scripts/test-db.mjs",
-    "db:seed": "tsx --conditions react-server lib/db/seed.ts"
+    "db:seed": "tsx --conditions react-server lib/db/seed.ts",
+    "smoke:sarvam": "node --env-file-if-exists=.env.local scripts/sarvam-smoke.mts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
