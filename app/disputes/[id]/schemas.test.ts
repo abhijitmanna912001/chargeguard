@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ResolveApprovalInputSchema, RunAgentInputSchema } from "./schemas";
+import { decodeApprovalChoice, ResolveApprovalInputSchema, RunAgentInputSchema } from "./schemas";
 
 const base = { disputeId: "d1", approvalId: "a1", decision: "approve" };
 
@@ -35,5 +35,19 @@ describe("ResolveApprovalInputSchema", () => {
   it("rejects missing or oversized ids (FormData null)", () => {
     expect(ResolveApprovalInputSchema.safeParse({ ...base, approvalId: null }).success).toBe(false);
     expect(ResolveApprovalInputSchema.safeParse({ ...base, disputeId: "x".repeat(101) }).success).toBe(false);
+  });
+});
+
+describe("decodeApprovalChoice", () => {
+  it("decodes every button value", () => {
+    expect(decodeApprovalChoice("approve")).toEqual({ decision: "approve" });
+    expect(decodeApprovalChoice("reject")).toEqual({ decision: "reject" });
+    expect(decodeApprovalChoice("approve:defend")).toEqual({ decision: "approve", resolvedAction: "defend" });
+    expect(decodeApprovalChoice("approve:accept")).toEqual({ decision: "approve", resolvedAction: "accept" });
+  });
+  it("returns null for anything else, including escalate and missing values", () => {
+    for (const v of ["approve:escalate", "reject:defend", "", null, undefined, 5]) {
+      expect(decodeApprovalChoice(v)).toBeNull();
+    }
   });
 });

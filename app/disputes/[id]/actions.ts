@@ -12,7 +12,7 @@ import {
 } from "@/lib/services/errors";
 import { resolveApprovalWorkflow } from "@/lib/services/resolve-approval";
 import { runAgentForDispute } from "@/lib/services/run-agent-workflow";
-import { ResolveApprovalInputSchema, RunAgentInputSchema, type ActionState } from "./schemas";
+import { decodeApprovalChoice, ResolveApprovalInputSchema, RunAgentInputSchema, type ActionState } from "./schemas";
 
 const INVALID: ActionState = { ok: false, message: "That request was not valid. Please check it and try again." };
 const NOT_READY: ActionState = { ok: false, message: "This dispute is not ready for that step." };
@@ -51,11 +51,13 @@ export async function runAgentAction(disputeId: string): Promise<ActionState> {
 }
 
 export async function resolveApprovalAction(_prev: ActionState | null, formData: FormData): Promise<ActionState> {
+  // Unknown choices decode to null; the schema then rejects the undefined decision.
+  const choice = decodeApprovalChoice(formData.get("choice"));
   const parsed = ResolveApprovalInputSchema.safeParse({
     disputeId: formData.get("disputeId"),
     approvalId: formData.get("approvalId"),
-    decision: formData.get("decision"),
-    resolvedAction: formData.get("resolvedAction"),
+    decision: choice?.decision,
+    resolvedAction: choice?.resolvedAction,
     note: formData.get("note"),
   });
   if (!parsed.success) return INVALID;

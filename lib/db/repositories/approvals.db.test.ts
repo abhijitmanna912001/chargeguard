@@ -55,6 +55,14 @@ describe.skipIf(!TEST_URL)("approvals repository (database)", () => {
     expect(row.status).not.toBe("pending");
   });
 
+  it("getLatestApproval returns the approval in any status, and null when there is none", async () => {
+    expect((await repo.getLatestApproval("d1"))?.status).toBe("pending");
+    await repo.resolveApproval("a1", { status: "rejected", decidedBy: "alice" });
+    expect(await repo.getPendingApproval("d1")).toBeNull();
+    expect((await repo.getLatestApproval("d1"))?.status).toBe("rejected");
+    expect(await repo.getLatestApproval("nope")).toBeNull();
+  });
+
   it("throws and leaves the row unchanged when already resolved", async () => {
     await repo.resolveApproval("a1", { status: "approved", resolvedAction: "defend", decidedBy: "alice" });
     const before = await prisma.approvalRequest.findUniqueOrThrow({ where: { id: "a1" } });

@@ -19,4 +19,29 @@ export const ResolveApprovalInputSchema = z.object({
 });
 export type ResolveApprovalInput = z.infer<typeof ResolveApprovalInputSchema>;
 
+/**
+ * The form sends ONE field, `choice`, because a single button cannot set two
+ * form fields. It is only an encoding: the server turns it back into
+ * decision + resolvedAction and every rule is still checked on the server.
+ */
+export const APPROVAL_CHOICES = ["approve", "reject", "approve:defend", "approve:accept"] as const;
+export type ApprovalChoice = (typeof APPROVAL_CHOICES)[number];
+
+export function decodeApprovalChoice(
+  value: unknown,
+): { decision: "approve" | "reject"; resolvedAction?: "defend" | "accept" } | null {
+  switch (value) {
+    case "approve":
+      return { decision: "approve" };
+    case "reject":
+      return { decision: "reject" };
+    case "approve:defend":
+      return { decision: "approve", resolvedAction: "defend" };
+    case "approve:accept":
+      return { decision: "approve", resolvedAction: "accept" };
+    default:
+      return null;
+  }
+}
+
 export type ActionState = { ok: true } | { ok: false; message: string };

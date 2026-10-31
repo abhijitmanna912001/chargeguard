@@ -2,12 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { AgentPanel } from "@/components/disputes/AgentPanel";
+import { AgentPanelSkeleton } from "@/components/disputes/AgentPanelSkeleton";
 import { ActionLogTimeline } from "@/components/disputes/ActionLogTimeline";
 import { CaseFileSkeleton } from "@/components/disputes/CaseFileSkeleton";
 import { DisputeSummary } from "@/components/disputes/DisputeSummary";
 import { EvidenceSection } from "@/components/disputes/EvidenceSection";
 import { listActionLog } from "@/lib/db/repositories/action-log";
 import { getDispute } from "@/lib/db/repositories/disputes";
+import { resolveApprovalAction, runAgentAction } from "./actions";
 
 type Props = PageProps<"/disputes/[id]">;
 
@@ -48,6 +51,9 @@ async function CaseFile({ params }: { params: Props["params"] }) {
   return (
     <>
       <DisputeSummary dispute={dispute} now={now} />
+      <Suspense fallback={<AgentPanelSkeleton />}>
+        <AgentPanel disputeId={dispute.id} runAgent={runAgentAction} resolveApproval={resolveApprovalAction} />
+      </Suspense>
       <EvidenceSection evidence={dispute.evidence} />
       <ActionLogTimeline entries={actionLog} />
     </>

@@ -39,6 +39,7 @@ ChargeGuard is an AI merchant-support teammate for payment disputes (chargebacks
 - Use timeouts and limited retries, with an escalation fallback when they run out.
 - Idempotent submission: persistent idempotency key plus a database unique constraint; check existing status before retrying.
 - Write an audit trail entry for every decision.
+- `npm run db:reset-demo -- --yes` wipes the dev database (all six tables) and reseeds it; never run it unasked.
 - Secrets only in env vars.
 - Always cap `max_tokens`.
 - Deterministic rules decide the final action; the model only recommends.

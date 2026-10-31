@@ -37,6 +37,18 @@ export async function getPendingApproval(
   return row ? approvalFromRow(row) : null;
 }
 
+/** The most recent approval for a dispute in any status; used to show the outcome. */
+export async function getLatestApproval(
+  disputeId: string,
+  db: DbClient = prisma,
+): Promise<ApprovalRequest | null> {
+  const row = await db.approvalRequest.findFirst({
+    where: { disputeId },
+    orderBy: [{ requestedAt: "desc" }, { id: "desc" }],
+  });
+  return row ? approvalFromRow(row) : null;
+}
+
 /**
  * Resolves a pending approval exactly once. The status guard lives in the
  * UPDATE's WHERE, so two concurrent deciders cannot both win; the loser gets
