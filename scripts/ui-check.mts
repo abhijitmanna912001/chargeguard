@@ -239,6 +239,42 @@ if (!disputeHref) {
           return cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0;
         });
         record(`${tag} (warning open): checkbox focus ring`, ring);
+
+        // Reject and Accept each open their own inline confirmation. Never click Confirm.
+        const rejectBtn = page.getByRole("button", { name: /^Reject/ });
+        const acceptBtn = page.getByRole("button", { name: "Accept", exact: true });
+        const confirmBtn = page.getByRole("button", { name: "Confirm", exact: true });
+        const cancelBtn = page.getByRole("button", { name: "Cancel", exact: true });
+        const rejectText = page.getByText("This hands the dispute to a person. The agent will not send a response. This cannot be undone.");
+
+        await rejectBtn.click();
+        record(`${tag}: Reject opens a confirmation with the consequence`, await rejectText.isVisible());
+        record(`${tag}: Reject confirmation replaces the Defend warning`, !(await page.getByText(/defending overrides/i).isVisible().catch(() => false)));
+        record(`${tag}: Reject is aria-expanded`, (await rejectBtn.getAttribute("aria-expanded")) === "true");
+        record(`${tag}: Confirm and Cancel are enabled`, (await confirmBtn.isEnabled()) && (await cancelBtn.isEnabled()));
+        await page.screenshot({ path: `${OUT}/detail-reject-confirm-${width}.png`, fullPage: true });
+        const { sw: sw3, cw: cw3 } = await noHScroll(page);
+        record(`${tag} (reject confirm open): no horizontal scroll`, sw3 <= cw3, `scrollWidth ${sw3} / clientWidth ${cw3}`);
+        const axe3 = await axeSerious(page);
+        record(`${tag} (reject confirm open): axe serious/critical`, axe3.length === 0, `${axe3.length} finding(s)`);
+        axe3.forEach((a) => console.log(`   axe: ${a}`));
+        await cancelBtn.focus();
+        await page.keyboard.press("Shift+Tab");
+        await page.keyboard.press("Tab");
+        const cancelRing = await page.evaluate(() => {
+          const cs = getComputedStyle(document.activeElement as HTMLElement);
+          return cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0;
+        });
+        record(`${tag} (reject confirm open): Cancel focus ring`, cancelRing);
+        await cancelBtn.click();
+        record(`${tag}: Cancel closes the Reject confirmation`, !(await rejectText.isVisible().catch(() => false)));
+        record(`${tag}: Reject is aria-expanded=false after Cancel`, (await rejectBtn.getAttribute("aria-expanded")) === "false");
+        record(`${tag}: URL unchanged after Cancel (nothing submitted)`, new URL(page.url()).pathname === href);
+
+        await acceptBtn.click();
+        record(`${tag}: Accept opens its own confirmation`, await page.getByText(/accepts the dispute without a defense/i).isVisible());
+        await cancelBtn.click();
+        record(`${tag}: Cancel closes the Accept confirmation`, !(await page.getByText(/accepts the dispute without a defense/i).isVisible().catch(() => false)));
       }
       await ctx.close();
     }

@@ -11,6 +11,14 @@ export type ResolveApprovalAction = (prev: ActionState | null, formData: FormDat
 
 const NOTE_MAX = 500;
 
+type Pending = "defend" | "accept" | "reject";
+
+// One line of consequence per step. UX only: the server still decides what is allowed.
+const CONSEQUENCE: Record<"accept" | "reject", string> = {
+  accept: "This accepts the dispute without a defense. The agent will not send a response. This cannot be undone.",
+  reject: "This hands the dispute to a person. The agent will not send a response. This cannot be undone.",
+};
+
 export function ApprovalForm({
   disputeId,
   approvalId,
@@ -29,8 +37,8 @@ export function ApprovalForm({
   // Controlled: React resets uncontrolled fields after every action, which would
   // wipe the note when the server returns an error.
   const [note, setNote] = useState("");
-  // UX only. The server still validates every decision exactly as before.
-  const [confirming, setConfirming] = useState(false);
+  // Which step is waiting for confirmation. UX only; the server validates every decision as before.
+  const [confirming, setConfirming] = useState<Pending | null>(null);
   const [understood, setUnderstood] = useState(false);
   const noteId = useId();
   const confirmId = useId();
@@ -40,26 +48,43 @@ export function ApprovalForm({
   const canDefend = proposedAction === "defend" || proposedAction === "escalate";
   // Defending over a blocking flag takes an extra, explicit step.
   const defendNeedsConfirm = canDefend && blocking.length > 0;
-  const defendChoice = proposedAction === "escalate" ? "approve:defend" : "approve";
-  const defendLabel = proposedAction === "escalate" ? "Defend" : `Approve ${proposedAction}`;
+  const escalated = proposedAction === "escalate";
+  // The value the form sends for each choice (decoded again on the server).
+  const CHOICE: Record<Pending, string> = {
+    defend: escalated ? "approve:defend" : "approve",
+    accept: escalated ? "approve:accept" : "approve",
+    reject: "reject",
+  };
+  const defendLabel = escalated ? "Defend" : `Approve ${proposedAction}`;
+  const acceptLabel = escalated ? "Accept" : `Approve ${proposedAction}`;
+  const rejectLabel = escalated ? "Reject (handle manually)" : "Reject";
 
-  function cancelConfirm() {
-    setConfirming(false);
+  function open(step: Pending) {
+    setConfirming(step);
+    setUnderstood(false);
+  }
+  function cancel() {
+    setConfirming(null);
     setUnderstood(false);
   }
 
-  const defendButton = defendNeedsConfirm ? (
+  const trigger = (step: Pending, label: string, variant: "primary" | "secondary" | "danger-ghost") => (
     <Button
       type="button"
+      variant={variant}
       disabled={pending}
-      aria-expanded={confirming}
+      aria-expanded={confirming === step}
       aria-controls={confirmId}
-      onClick={() => setConfirming(true)}
+      onClick={() => open(step)}
     >
-      {defendLabel}
+      {label}
     </Button>
+  );
+
+  const defendButton = defendNeedsConfirm ? (
+    trigger("defend", defendLabel, "primary")
   ) : (
-    <Button type="submit" name="choice" value={defendChoice} disabled={pending}>
+    <Button type="submit" name="choice" value={CHOICE.defend} disabled={pending}>
       {defendLabel}
     </Button>
   );
@@ -90,35 +115,21 @@ export function ApprovalForm({
         </p>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          {proposedAction === "escalate" ? (
+          {escalated ? (
             <>
               {defendButton}
-              <Button type="submit" name="choice" value="approve:accept" variant="secondary" disabled={pending}>
-                Accept
-              </Button>
-              <span aria-hidden="true" className="hidden h-6 w-px bg-line sm:block" />
-              <Button type="submit" name="choice" value="reject" variant="danger-ghost" disabled={pending}>
-                Reject (handle manually)
-              </Button>
+              {trigger("accept", acceptLabel, "secondary")}
             </>
+          ) : proposedAction === "defend" ? (
+            defendButton
           ) : (
-            <>
-              {proposedAction === "defend" ? (
-                defendButton
-              ) : (
-                <Button type="submit" name="choice" value="approve" variant="secondary" disabled={pending}>
-                  Approve {proposedAction}
-                </Button>
-              )}
-              <span aria-hidden="true" className="hidden h-6 w-px bg-line sm:block" />
-              <Button type="submit" name="choice" value="reject" variant="danger-ghost" disabled={pending}>
-                Reject
-              </Button>
-            </>
+            trigger("accept", acceptLabel, "secondary")
           )}
+          <span aria-hidden="true" className="hidden h-6 w-px bg-line sm:block" />
+          {trigger("reject", rejectLabel, "danger-ghost")}
         </div>
 
-        {defendNeedsConfirm && confirming && (
+        {confirming === "defend" && defendNeedsConfirm && (
           <div id={confirmId} role="group" aria-labelledby={`${confirmId}-title`} className="mt-4 rounded-lg border-2 border-danger-solid bg-danger-bg p-4 text-danger-fg">
             <p id={`${confirmId}-title`} className="text-sm">
               <strong>Warning:</strong> defending overrides {blocking.length === 1 ? "a blocking flag" : "blocking flags"} (
@@ -135,10 +146,26 @@ export function ApprovalForm({
               I understand the rules advise against defending this dispute
             </label>
             <div className="mt-3 flex flex-wrap gap-3">
-              <Button type="submit" name="choice" value={defendChoice} variant="danger" disabled={pending || !understood}>
+              <Button type="submit" name="choice" value={CHOICE.defend} variant="danger" disabled={pending || !understood}>
                 Confirm and defend
               </Button>
-              <Button type="button" variant="secondary" disabled={pending} onClick={cancelConfirm}>
+              <Button type="button" variant="secondary" disabled={pending} onClick={cancel}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {(confirming === "accept" || confirming === "reject") && (
+          <div id={confirmId} role="group" aria-labelledby={`${confirmId}-title`} className="mt-4 rounded-lg border-2 border-warning-line bg-warning-bg p-4 text-warning-fg">
+            <p id={`${confirmId}-title`} className="text-sm font-medium">
+              {CONSEQUENCE[confirming]}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <Button type="submit" name="choice" value={CHOICE[confirming]} variant={confirming === "reject" ? "danger" : "primary"} disabled={pending}>
+                Confirm
+              </Button>
+              <Button type="button" variant="secondary" disabled={pending} onClick={cancel}>
                 Cancel
               </Button>
             </div>

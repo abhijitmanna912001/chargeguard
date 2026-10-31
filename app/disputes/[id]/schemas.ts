@@ -45,4 +45,7 @@ export function decodeApprovalChoice(
   }
 }
 
+/** Shown by submitDefenseAction when the provider rejects a submission. The page shows the specific reason beside Retry. */
+export const PROVIDER_REJECTED_MESSAGE = "The payment provider did not accept the response. You can try again.";
+
 export type ActionState = { ok: true } | { ok: false; message: string };

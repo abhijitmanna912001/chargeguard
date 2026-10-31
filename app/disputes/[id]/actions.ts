@@ -16,7 +16,7 @@ import {
 import { resolveApprovalWorkflow } from "@/lib/services/resolve-approval";
 import { runAgentForDispute } from "@/lib/services/run-agent-workflow";
 import { submitDefense } from "@/lib/services/submit-defense";
-import { decodeApprovalChoice, ResolveApprovalInputSchema, RunAgentInputSchema, SubmitDefenseInputSchema, type ActionState } from "./schemas";
+import { decodeApprovalChoice, PROVIDER_REJECTED_MESSAGE, ResolveApprovalInputSchema, RunAgentInputSchema, SubmitDefenseInputSchema, type ActionState } from "./schemas";
 
 const INVALID: ActionState = { ok: false, message: "That request was not valid. Please check it and try again." };
 const NOT_READY: ActionState = { ok: false, message: "This dispute is not ready for that step." };
@@ -135,7 +135,7 @@ export async function submitDefenseAction(disputeId: string): Promise<ActionStat
     if (err instanceof DisputeNotFoundError) return { ok: false, message: "We could not find that dispute." };
     if (err instanceof SubmissionNotAllowedError) return NOT_READY;
     if (err instanceof ProviderSubmissionFailedError) {
-      return { ok: false, message: "The payment provider did not accept the response. You can try again." };
+      return { ok: false, message: PROVIDER_REJECTED_MESSAGE };
     }
     console.error("submitDefenseAction failed", err);
     return GENERIC;

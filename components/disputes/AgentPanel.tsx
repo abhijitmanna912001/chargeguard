@@ -98,14 +98,10 @@ export async function AgentPanel({ disputeId, runAgent, resolveApproval, submitD
             (defendRecommendation ? (
               <div>
                 <DefensePackageCard pkg={buildDefensePackage(dispute, defendRecommendation)} />
-                {submission?.status === "failed" && (
-                  <p role="alert" className="mt-3 text-sm font-medium text-danger-fg">
-                    The last simulated submission failed: {submission.errorMessage ?? "no reason recorded"}
-                  </p>
-                )}
                 <SubmitDefenseButton
                   action={submitDefense.bind(null, disputeId)}
                   isRetry={submission?.status === "failed"}
+                  lastFailure={submission?.status === "failed" ? (submission.errorMessage ?? "no reason recorded") : null}
                 />
               </div>
             ) : (

@@ -42,6 +42,7 @@ describe("ApprovalForm submission", () => {
     setup("escalate", [], action);
     await userEvent.type(screen.getByLabelText(/note/i), "checked with ops");
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
     const fd = (action as ReturnType<typeof vi.fn>).mock.calls[0][1] as FormData;
     expect(Object.fromEntries(fd)).toMatchObject({
@@ -57,6 +58,7 @@ describe("ApprovalForm submission", () => {
     setup("defend", [], action);
     await userEvent.type(screen.getByLabelText(/note/i), "keep me");
     await userEvent.click(screen.getByRole("button", { name: "Reject" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
     const message = await screen.findByText("Someone else has already decided this approval.");
     expect(message).toHaveAttribute("aria-live", "polite");
     expect(screen.getByLabelText(/note/i)).toHaveValue("keep me");
@@ -114,11 +116,11 @@ describe("blocking flag override: confirm before defending", () => {
     expect(screen.getByRole("checkbox")).not.toBeChecked();
   });
 
-  it("Accept and Reject are not gated by the warning", async () => {
-    const action = okAction();
-    setup("escalate", ["missing_evidence"], action);
+  it("Accept does not show the blocking-flag warning, only its own confirmation", async () => {
+    setup("escalate", ["missing_evidence"], okAction());
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
-    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/defending overrides/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/accepts the dispute without a defense/i)).toBeInTheDocument();
   });
 
   it("Defend submits straight away when there is no blocking flag", async () => {
@@ -139,5 +141,84 @@ describe("blocking flag override: confirm before defending", () => {
     setup("escalate", [], okAction());
     expect(screen.getByRole("heading", { name: "Your decision" })).toBeInTheDocument();
     expect(screen.getByText(/agent only recommends/i)).toBeInTheDocument();
+  });
+});
+
+const REJECT_TEXT = "This hands the dispute to a person. The agent will not send a response. This cannot be undone.";
+
+describe("confirming Reject and Accept", () => {
+  it("Reject does not submit; it shows the consequence with Confirm and Cancel", async () => {
+    const action = okAction();
+    setup("escalate", [], action);
+    await userEvent.click(screen.getByRole("button", { name: "Reject (handle manually)" }));
+    expect(action).not.toHaveBeenCalled();
+    expect(screen.getByText(REJECT_TEXT)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reject (handle manually)" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("Confirm sends the reject choice with the note", async () => {
+    const action = okAction();
+    setup("escalate", [], action);
+    await userEvent.type(screen.getByLabelText(/note/i), "handling by phone");
+    await userEvent.click(screen.getByRole("button", { name: "Reject (handle manually)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    const fd = (action as ReturnType<typeof vi.fn>).mock.calls[0][1] as FormData;
+    expect(Object.fromEntries(fd)).toMatchObject({ disputeId: "d1", approvalId: "a1", note: "handling by phone", choice: "reject" });
+  });
+
+  it("Cancel closes the panel, sends nothing, and keeps the note", async () => {
+    const action = okAction();
+    setup("escalate", [], action);
+    await userEvent.type(screen.getByLabelText(/note/i), "keep");
+    await userEvent.click(screen.getByRole("button", { name: "Reject (handle manually)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(REJECT_TEXT)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/note/i)).toHaveValue("keep");
+    expect(action).not.toHaveBeenCalled();
+  });
+
+  it("Accept (escalated case) confirms with approve:accept", async () => {
+    const action = okAction();
+    setup("escalate", [], action);
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(action).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    const fd = (action as ReturnType<typeof vi.fn>).mock.calls[0][1] as FormData;
+    expect(fd.get("choice")).toBe("approve:accept");
+  });
+
+  it("Approve accept and Reject on an accept proposal are both confirmed", async () => {
+    const action = okAction();
+    setup("accept", [], action);
+    await userEvent.click(screen.getByRole("button", { name: "Approve accept" }));
+    expect(action).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    expect((action as ReturnType<typeof vi.fn>).mock.calls[0][1].get("choice")).toBe("approve");
+  });
+
+  it("only one confirmation panel is open at a time", async () => {
+    setup("escalate", ["missing_evidence"], okAction());
+    await userEvent.click(screen.getByRole("button", { name: "Defend" }));
+    await userEvent.click(screen.getByRole("button", { name: "Reject (handle manually)" }));
+    expect(screen.queryByText(/defending overrides/i)).not.toBeInTheDocument();
+    expect(screen.getByText(REJECT_TEXT)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Confirm" })).toHaveLength(1);
+  });
+
+  it("disables Confirm and Cancel while the action runs", async () => {
+    let finish!: (s: ActionState) => void;
+    const action: Fake = () => new Promise<ActionState>((resolve) => (finish = resolve));
+    setup("escalate", [], action);
+    await userEvent.click(screen.getByRole("button", { name: "Reject (handle manually)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(await screen.findByText("Saving your decision…")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    finish({ ok: true });
   });
 });
