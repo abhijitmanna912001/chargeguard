@@ -3,12 +3,13 @@
 // one. (A DB-level trigger is deferred.)
 import type { ActionLogEntry } from "../../../contracts";
 import { actionLogFromRow, actionLogToCreateData } from "../mappers";
-import { prisma } from "../prisma";
+import { prisma, type DbClient } from "../prisma";
 
 export async function appendActionLog(
   entry: ActionLogEntry,
+  db: DbClient = prisma,
 ): Promise<ActionLogEntry> {
-  const row = await prisma.actionLog.create({
+  const row = await db.actionLog.create({
     data: actionLogToCreateData(entry),
   });
   return actionLogFromRow(row);
@@ -16,8 +17,9 @@ export async function appendActionLog(
 
 export async function listActionLog(
   disputeId: string,
+  db: DbClient = prisma,
 ): Promise<ActionLogEntry[]> {
-  const rows = await prisma.actionLog.findMany({
+  const rows = await db.actionLog.findMany({
     where: { disputeId },
     orderBy: [{ timestamp: "asc" }, { id: "asc" }],
   });

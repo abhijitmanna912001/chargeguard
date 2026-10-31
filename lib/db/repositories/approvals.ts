@@ -6,12 +6,13 @@ import {
   approvalToCreateData,
   type ApprovalResolution,
 } from "../mappers";
-import { prisma } from "../prisma";
+import { prisma, runAtomic, type DbClient } from "../prisma";
 
 export async function createApprovalRequest(
   req: ApprovalRequest,
+  db: DbClient = prisma,
 ): Promise<ApprovalRequest> {
-  const row = await prisma.approvalRequest.create({
+  const row = await db.approvalRequest.create({
     data: approvalToCreateData(req),
   });
   return approvalFromRow(row);
@@ -19,8 +20,9 @@ export async function createApprovalRequest(
 
 export async function getPendingApproval(
   disputeId: string,
+  db: DbClient = prisma,
 ): Promise<ApprovalRequest | null> {
-  const row = await prisma.approvalRequest.findFirst({
+  const row = await db.approvalRequest.findFirst({
     where: { disputeId, status: "pending" },
     orderBy: [{ requestedAt: "desc" }, { id: "desc" }],
   });
@@ -36,9 +38,10 @@ export async function getPendingApproval(
 export async function resolveApproval(
   id: string,
   resolution: ApprovalResolution,
+  db: DbClient = prisma,
 ): Promise<ApprovalRequest> {
   const data = approvalResolutionToUpdateData(resolution, new Date());
-  return prisma.$transaction(async (tx) => {
+  return runAtomic(db, async (tx) => {
     const { count } = await tx.approvalRequest.updateMany({
       where: { id, status: "pending" },
       data,

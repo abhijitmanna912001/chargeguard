@@ -1,7 +1,7 @@
 import type { SubmissionResult } from "../../../contracts";
 import { IdempotencyKeyConflictError, SubmissionNotPendingError } from "../errors";
 import { submissionFromRow, submissionToCreateData } from "../mappers";
-import { prisma } from "../prisma";
+import { prisma, runAtomic, type DbClient } from "../prisma";
 
 /**
  * Idempotent on idempotencyKey, enforced by the unique constraint. An upsert
@@ -13,9 +13,10 @@ import { prisma } from "../prisma";
  */
 export async function createSubmission(
   sub: SubmissionResult,
+  db: DbClient = prisma,
 ): Promise<SubmissionResult> {
   const data = submissionToCreateData(sub);
-  const row = await prisma.submission.upsert({
+  const row = await db.submission.upsert({
     where: { idempotencyKey: data.idempotencyKey },
     create: data,
     update: {},
@@ -28,8 +29,9 @@ export async function createSubmission(
 
 export async function getSubmissionByKey(
   key: string,
+  db: DbClient = prisma,
 ): Promise<SubmissionResult | null> {
-  const row = await prisma.submission.findUnique({
+  const row = await db.submission.findUnique({
     where: { idempotencyKey: key },
   });
   return row ? submissionFromRow(row) : null;
@@ -40,8 +42,9 @@ export async function getSubmissionByKey(
 async function finalize(
   id: string,
   data: { status: string; submittedAt?: Date; providerRef?: string; errorMessage?: string },
+  db: DbClient,
 ): Promise<SubmissionResult> {
-  return prisma.$transaction(async (tx) => {
+  return runAtomic(db, async (tx) => {
     const { count } = await tx.submission.updateMany({
       where: { id, status: "pending" },
       data,
@@ -51,10 +54,18 @@ async function finalize(
   });
 }
 
-export function markSubmitted(id: string, providerRef: string): Promise<SubmissionResult> {
-  return finalize(id, { status: "submitted", submittedAt: new Date(), providerRef });
+export function markSubmitted(
+  id: string,
+  providerRef: string,
+  db: DbClient = prisma,
+): Promise<SubmissionResult> {
+  return finalize(id, { status: "submitted", submittedAt: new Date(), providerRef }, db);
 }
 
-export function markFailed(id: string, errorMessage: string): Promise<SubmissionResult> {
-  return finalize(id, { status: "failed", errorMessage });
+export function markFailed(
+  id: string,
+  errorMessage: string,
+  db: DbClient = prisma,
+): Promise<SubmissionResult> {
+  return finalize(id, { status: "failed", errorMessage }, db);
 }

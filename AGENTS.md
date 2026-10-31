@@ -18,8 +18,9 @@ ChargeGuard is an AI merchant-support teammate for payment disputes (chargebacks
 - `agent-core/` — dispute logic, rules, model orchestration. Imports `contracts/` only.
 - `lib/db/` — database access (Prisma repositories and mappers). Imports `contracts/` and its own generated client (`lib/db/generated/`) only. The one exception is `lib/db/seed.ts`, a dev script that may also import `fixtures/`.
 - `fixtures/` — synthetic demo cases. Imports `contracts/` only.
-- `app/` — Next.js UI and Server Actions. Imports `lib/db/`, `contracts/` and `agent-core/`.
-- Never import in the reverse direction (`contracts/` must not import `agent-core/`, `lib/db/` or `app/`; `agent-core/` must not import `lib/db/` or `app/`; `lib/db/` must not import `agent-core/` or `app/`).
+- `lib/services/` — multi-step workflows. Workflows that span several repositories live in lib/services and run in one transaction. A single repository function may use runAtomic for its own atomicity (it joins the caller's transaction when given one). Never open a nested $transaction directly. Imports `lib/db/` and `contracts/`.
+- `app/` — Next.js UI and Server Actions. Imports `lib/services/`, `lib/db/`, `contracts/` and `agent-core/`.
+- Never import in the reverse direction (`contracts/` must not import `agent-core/`, `lib/db/` or `app/`; `agent-core/` must not import `lib/db/` or `app/`; `lib/db/` must not import `agent-core/`, `lib/services/` or `app/`; `lib/services/` must not import `agent-core/` or `app/`).
 - The generated Prisma client is git-ignored. After pulling, run `npx prisma generate`.
 
 ## Next.js rules

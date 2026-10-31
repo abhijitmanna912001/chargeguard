@@ -67,4 +67,16 @@ describe.skipIf(!TEST_URL)("approvals repository (database)", () => {
     expect(after).toEqual(before);
     expect(after.decidedBy).toBe("alice");
   });
+
+  it("joins a caller's transaction: a rollback after resolveApproval undoes it", async () => {
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await repo.resolveApproval("a1", { status: "rejected", decidedBy: "bob" }, tx);
+        throw new Error("abort");
+      }),
+    ).rejects.toThrow("abort");
+
+    const after = await prisma.approvalRequest.findUniqueOrThrow({ where: { id: "a1" } });
+    expect(after.status).toBe("pending");
+  });
 });

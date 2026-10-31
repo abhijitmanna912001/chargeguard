@@ -1,11 +1,12 @@
 import type { Recommendation } from "../../../contracts";
 import { recommendationFromRow, recommendationToCreateData } from "../mappers";
-import { prisma } from "../prisma";
+import { prisma, type DbClient } from "../prisma";
 
 export async function createRecommendation(
   rec: Recommendation,
+  db: DbClient = prisma,
 ): Promise<Recommendation> {
-  const row = await prisma.recommendation.create({
+  const row = await db.recommendation.create({
     data: recommendationToCreateData(rec),
   });
   return recommendationFromRow(row);
@@ -14,8 +15,9 @@ export async function createRecommendation(
 /** Newest first, served by the (disputeId, createdAt) index. id breaks ties. */
 export async function getLatestRecommendation(
   disputeId: string,
+  db: DbClient = prisma,
 ): Promise<Recommendation | null> {
-  const row = await prisma.recommendation.findFirst({
+  const row = await db.recommendation.findFirst({
     where: { disputeId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   });
