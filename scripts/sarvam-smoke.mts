@@ -96,7 +96,9 @@ type CallResult = { ok: true; completion: ChatCompletion; attempts: number } | F
 
 type ChatRequest = { messages: unknown[]; max_tokens: number; [param: string]: unknown };
 
-type CallOptions = {
+// Local to this script. Unlike agent-core's CallOptions it takes the key
+// explicitly, so the fake-key auth test can run beside the live ones.
+type SmokeCallOptions = {
   apiKey: string;
   baseUrl?: string;
   timeoutMs?: number;
@@ -127,7 +129,7 @@ function safeJson(text: string): unknown {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function callSarvam(request: ChatRequest, opts: CallOptions): Promise<CallResult> {
+async function callSarvam(request: ChatRequest, opts: SmokeCallOptions): Promise<CallResult> {
   const {
     baseUrl = SARVAM_BASE_URL,
     timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -287,7 +289,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 const mockUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-const mockOpts: CallOptions = { apiKey: "mock-key", baseUrl: mockUrl, timeoutMs: 300, maxRetries: 2, backoffBaseMs: 10 };
+const mockOpts: SmokeCallOptions = { apiKey: "mock-key", baseUrl: mockUrl, timeoutMs: 300, maxRetries: 2, backoffBaseMs: 10 };
 
 function mock(...replies: MockReply[]) {
   mockQueue = replies;
@@ -443,7 +445,7 @@ if (!apiKey) {
     skip(name, reason);
   }
 } else {
-  const live: CallOptions = { apiKey };
+  const live: SmokeCallOptions = { apiKey };
 
   await test("A live: basic response", async () => {
     const r = await callSarvam(
