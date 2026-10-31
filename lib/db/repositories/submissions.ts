@@ -69,3 +69,24 @@ export function markFailed(
 ): Promise<SubmissionResult> {
   return finalize(id, { status: "failed", errorMessage }, db);
 }
+
+/**
+ * Re-opens a failed submission for another attempt (failed -> pending), keeping
+ * the same idempotency key so the provider can still dedupe. Guarded in the
+ * UPDATE's WHERE like the other transitions. Returns the row as it now stands:
+ * pending if this call (or a concurrent one) reopened it, submitted if someone
+ * finished it first. Null only if the row does not exist.
+ */
+export async function reopenFailedSubmission(
+  id: string,
+  db: DbClient = prisma,
+): Promise<SubmissionResult | null> {
+  return runAtomic(db, async (tx) => {
+    await tx.submission.updateMany({
+      where: { id, status: "failed" },
+      data: { status: "pending", errorMessage: null },
+    });
+    const row = await tx.submission.findUnique({ where: { id } });
+    return row ? submissionFromRow(row) : null;
+  });
+}

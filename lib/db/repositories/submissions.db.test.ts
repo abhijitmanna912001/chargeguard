@@ -64,4 +64,16 @@ describe.skipIf(!TEST_URL)("submissions repository (database)", () => {
     expect(row.providerRef).toBe("prov_1");
     expect(row.errorMessage).toBeNull();
   });
+
+  it("reopens a failed submission to pending, but leaves a submitted one alone", async () => {
+    await repo.createSubmission(pending("s1", "d1", "key-1"));
+    await repo.markFailed("s1", "boom");
+    const reopened = await repo.reopenFailedSubmission("s1");
+    expect(reopened).toMatchObject({ id: "s1", status: "pending" });
+    expect(reopened?.errorMessage).toBeUndefined();
+
+    await repo.markSubmitted("s1", "prov_1");
+    expect((await repo.reopenFailedSubmission("s1"))?.status).toBe("submitted");
+    expect(await repo.reopenFailedSubmission("missing")).toBeNull();
+  });
 });

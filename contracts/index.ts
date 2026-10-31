@@ -5,3 +5,4 @@ export * from "./recommendation";
 export * from "./action-log";
 export * from "./approval";
 export * from "./submission";
+export * from "./defense-package";

@@ -9,10 +9,13 @@ import {
   ApprovalDisputeMismatchError,
   DisputeNotFoundError,
   DisputeNotReadyError,
+  ProviderSubmissionFailedError,
+  SubmissionNotAllowedError,
 } from "@/lib/services/errors";
 import { resolveApprovalWorkflow } from "@/lib/services/resolve-approval";
 import { runAgentForDispute } from "@/lib/services/run-agent-workflow";
-import { decodeApprovalChoice, ResolveApprovalInputSchema, RunAgentInputSchema, type ActionState } from "./schemas";
+import { submitDefense } from "@/lib/services/submit-defense";
+import { decodeApprovalChoice, ResolveApprovalInputSchema, RunAgentInputSchema, SubmitDefenseInputSchema, type ActionState } from "./schemas";
 
 const INVALID: ActionState = { ok: false, message: "That request was not valid. Please check it and try again." };
 const NOT_READY: ActionState = { ok: false, message: "This dispute is not ready for that step." };
@@ -112,5 +115,30 @@ export async function resolveApprovalAction(_prev: ActionState | null, formData:
   }
 
   revalidateDispute(disputeId);
+  return { ok: true };
+}
+
+export async function submitDefenseAction(disputeId: string): Promise<ActionState> {
+  const parsed = SubmitDefenseInputSchema.safeParse({ disputeId });
+  if (!parsed.success) return INVALID;
+
+  try {
+    await submitDefense(parsed.data.disputeId, {
+      now: () => new Date(),
+      createId: () => crypto.randomUUID(),
+    });
+  } catch (err) {
+    // A failed attempt is logged on the dispute, so refresh the page in every case.
+    revalidateDispute(parsed.data.disputeId);
+    if (err instanceof DisputeNotFoundError) return { ok: false, message: "We could not find that dispute." };
+    if (err instanceof SubmissionNotAllowedError) return NOT_READY;
+    if (err instanceof ProviderSubmissionFailedError) {
+      return { ok: false, message: "The payment provider did not accept the response. You can try again." };
+    }
+    console.error("submitDefenseAction failed", err);
+    return GENERIC;
+  }
+
+  revalidateDispute(parsed.data.disputeId);
   return { ok: true };
 }

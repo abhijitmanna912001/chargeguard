@@ -9,6 +9,7 @@ const idField = z.string().trim().min(1).max(100);
 const emptyToUndefined = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
 
 export const RunAgentInputSchema = z.object({ disputeId: idField });
+export const SubmitDefenseInputSchema = z.object({ disputeId: idField });
 
 export const ResolveApprovalInputSchema = z.object({
   disputeId: idField,

@@ -45,3 +45,27 @@ export class InvalidDecisionError extends Error {
     this.name = "InvalidDecisionError";
   }
 }
+
+export type SubmissionBlockedReason = "status_not_decided" | "no_approval" | "approval_not_approved" | "action_not_defend";
+
+/** The dispute is not in a state where a defense may be submitted. No provider call was made. */
+export class SubmissionNotAllowedError extends Error {
+  constructor(
+    readonly disputeId: string,
+    readonly reason: SubmissionBlockedReason,
+  ) {
+    super(`Dispute ${disputeId} cannot be submitted: ${reason}`);
+    this.name = "SubmissionNotAllowedError";
+  }
+}
+
+/** The provider did not accept the response. The failure is recorded; the dispute stays "decided". */
+export class ProviderSubmissionFailedError extends Error {
+  constructor(
+    readonly disputeId: string,
+    readonly retryable: boolean,
+  ) {
+    super(`The provider did not accept the response for dispute ${disputeId}`);
+    this.name = "ProviderSubmissionFailedError";
+  }
+}

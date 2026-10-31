@@ -23,3 +23,11 @@ export async function getLatestRecommendation(
   });
   return row ? recommendationFromRow(row) : null;
 }
+
+export async function getRecommendation(
+  id: string,
+  db: DbClient = prisma,
+): Promise<Recommendation | null> {
+  const row = await db.recommendation.findUnique({ where: { id } });
+  return row ? recommendationFromRow(row) : null;
+}
