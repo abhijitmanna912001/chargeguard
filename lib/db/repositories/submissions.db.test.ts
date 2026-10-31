@@ -76,4 +76,11 @@ describe.skipIf(!TEST_URL)("submissions repository (database)", () => {
     expect((await repo.reopenFailedSubmission("s1"))?.status).toBe("submitted");
     expect(await repo.reopenFailedSubmission("missing")).toBeNull();
   });
+
+  it("finds a submission by key, with its failure message, and null for an unknown key", async () => {
+    await repo.createSubmission(pending("s1", "d1", "key-1"));
+    await repo.markFailed("s1", "unavailable");
+    expect(await repo.getSubmissionByKey("key-1")).toMatchObject({ id: "s1", status: "failed", errorMessage: "unavailable" });
+    expect(await repo.getSubmissionByKey("nope")).toBeNull();
+  });
 });

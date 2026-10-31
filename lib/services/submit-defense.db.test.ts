@@ -25,6 +25,7 @@ const approved: ApprovalRequest = {
 
 describe.skipIf(!TEST_URL)("submitDefense (database)", () => {
   let submit: typeof import("./submit-defense").submitDefense;
+  let submitModule: typeof import("./submit-defense");
   let errors: typeof import("./errors");
   let prisma: typeof import("../db/prisma").prisma;
   let n = 0;
@@ -50,7 +51,8 @@ describe.skipIf(!TEST_URL)("submitDefense (database)", () => {
 
   beforeAll(async () => {
     process.env.DATABASE_URL = TEST_URL;
-    submit = (await import("./submit-defense")).submitDefense;
+    submitModule = await import("./submit-defense");
+    submit = submitModule.submitDefense;
     errors = await import("./errors");
     prisma = (await import("../db/prisma")).prisma;
   });
@@ -111,6 +113,14 @@ describe.skipIf(!TEST_URL)("submitDefense (database)", () => {
     expect(await prisma.submission.count()).toBe(1);
     expect((await submitLogs()).map((l) => l.outcome).sort()).toEqual(["failed", "submitted"]);
     expect(provider).toHaveBeenCalledTimes(2);
+  });
+
+  it("the exported key function finds the stored submission (what the UI reads)", async () => {
+    await seed();
+    await run(fakeProvider({ ok: false, retryable: true, message: "unavailable" })).catch(() => {});
+    const repo = await import("../db/repositories/submissions");
+    const found = await repo.getSubmissionByKey(submitModule.defenseIdempotencyKey(dispute.id, "a1"));
+    expect(found).toMatchObject({ status: "failed", errorMessage: "unavailable" });
   });
 
   it("a provider that throws is recorded as a failed submission", async () => {

@@ -16,7 +16,7 @@ export function ApprovalOutcome({ status, approval }: { status: DisputeStatus; a
         <StatusBadge status={status} />
       </p>
       {status === "submitted" && (
-        <p className="mt-2 text-sm">A response was submitted. A submitted response is not a won dispute.</p>
+        <p className="mt-2 text-sm">A response was submitted to the simulated provider. A submitted response is not a won dispute.</p>
       )}
       {approval === null ? (
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">No approval record was found for this dispute.</p>

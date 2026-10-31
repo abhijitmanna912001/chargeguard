@@ -10,7 +10,7 @@ import { DisputeSummary } from "@/components/disputes/DisputeSummary";
 import { EvidenceSection } from "@/components/disputes/EvidenceSection";
 import { listActionLog } from "@/lib/db/repositories/action-log";
 import { getDispute } from "@/lib/db/repositories/disputes";
-import { resolveApprovalAction, runAgentAction } from "./actions";
+import { resolveApprovalAction, runAgentAction, submitDefenseAction } from "./actions";
 
 type Props = PageProps<"/disputes/[id]">;
 
@@ -52,7 +52,12 @@ async function CaseFile({ params }: { params: Props["params"] }) {
     <>
       <DisputeSummary dispute={dispute} now={now} />
       <Suspense fallback={<AgentPanelSkeleton />}>
-        <AgentPanel disputeId={dispute.id} runAgent={runAgentAction} resolveApproval={resolveApprovalAction} />
+        <AgentPanel
+          disputeId={dispute.id}
+          runAgent={runAgentAction}
+          resolveApproval={resolveApprovalAction}
+          submitDefense={submitDefenseAction}
+        />
       </Suspense>
       <EvidenceSection evidence={dispute.evidence} />
       <ActionLogTimeline entries={actionLog} />
