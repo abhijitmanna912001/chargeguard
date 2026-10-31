@@ -8,8 +8,10 @@ import { ActionLogTimeline } from "@/components/disputes/ActionLogTimeline";
 import { CaseFileSkeleton } from "@/components/disputes/CaseFileSkeleton";
 import { DisputeSummary } from "@/components/disputes/DisputeSummary";
 import { EvidenceSection } from "@/components/disputes/EvidenceSection";
+import { getAgentMode } from "@/app/agent-mode";
 import { listActionLog } from "@/lib/db/repositories/action-log";
 import { getDispute } from "@/lib/db/repositories/disputes";
+import { getLatestRecommendation } from "@/lib/db/repositories/recommendations";
 import { resolveApprovalAction, runAgentAction, submitDefenseAction } from "./actions";
 
 type Props = PageProps<"/disputes/[id]">;
@@ -42,21 +44,27 @@ export default function DisputeDetailPage({ params }: Props) {
 
 async function CaseFile({ params }: { params: Props["params"] }) {
   const { id } = await params;
-  const [dispute, actionLog] = await Promise.all([getDispute(id), listActionLog(id)]);
+  const [dispute, actionLog, recommendation] = await Promise.all([
+    getDispute(id),
+    listActionLog(id),
+    getLatestRecommendation(id),
+  ]);
   if (!dispute) {
     notFound();
   }
   // Read the clock after the awaits so it is a request-time value.
   const now = new Date();
+  const isMockAgent = getAgentMode() === "mock";
   return (
     <>
-      <DisputeSummary dispute={dispute} now={now} />
+      <DisputeSummary dispute={dispute} now={now} recommendation={recommendation} isMockAgent={isMockAgent} />
       <Suspense fallback={<AgentPanelSkeleton />}>
         <AgentPanel
           disputeId={dispute.id}
           runAgent={runAgentAction}
           resolveApproval={resolveApprovalAction}
           submitDefense={submitDefenseAction}
+          isMockAgent={isMockAgent}
         />
       </Suspense>
       <EvidenceSection evidence={dispute.evidence} />

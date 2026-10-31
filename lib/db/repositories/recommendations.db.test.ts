@@ -39,4 +39,31 @@ describe.skipIf(!TEST_URL)("recommendations repository (database)", () => {
   it("returns null when the dispute has none", async () => {
     expect(await repo.getLatestRecommendation("d1")).toBeNull();
   });
+
+  describe("getLatestRecommendations", () => {
+    it("returns the newest per dispute in one query, omitting disputes with none", async () => {
+      await disputes.createDisputeWithEvidence(buildDispute("d2"));
+      await disputes.createDisputeWithEvidence(buildDispute("d3"));
+      await repo.createRecommendation(buildRecommendation("r1_old", "d1", "2026-11-02T00:00:00.000Z"));
+      await repo.createRecommendation(buildRecommendation("r1_new", "d1", "2026-11-05T00:00:00.000Z"));
+      await repo.createRecommendation(buildRecommendation("r2_only", "d2", "2026-11-03T00:00:00.000Z"));
+
+      const spy = vi.spyOn(prisma.recommendation, "findMany");
+      const latest = await repo.getLatestRecommendations(["d1", "d2", "d3"]);
+      expect(spy).toHaveBeenCalledTimes(1);
+      spy.mockRestore();
+
+      expect(latest.get("d1")?.id).toBe("r1_new");
+      expect(latest.get("d2")?.id).toBe("r2_only");
+      expect(latest.has("d3")).toBe(false);
+      expect(latest.size).toBe(2);
+    });
+
+    it("breaks createdAt ties by id and returns an empty map for no ids", async () => {
+      await repo.createRecommendation(buildRecommendation("r_a", "d1", "2026-11-05T00:00:00.000Z"));
+      await repo.createRecommendation(buildRecommendation("r_b", "d1", "2026-11-05T00:00:00.000Z"));
+      expect((await repo.getLatestRecommendations(["d1"])).get("d1")?.id).toBe("r_b");
+      expect((await repo.getLatestRecommendations([])).size).toBe(0);
+    });
+  });
 });

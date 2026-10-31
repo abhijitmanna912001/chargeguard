@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getAgentRunner } from "@/app/agent-mode";
 import { DEMO_MERCHANT_ID } from "@/lib/demo-merchant";
 import { ApprovalAlreadyResolvedError } from "@/lib/db/errors";
 import { getApproval } from "@/lib/db/repositories/approvals";
@@ -38,6 +39,7 @@ export async function runAgentAction(disputeId: string): Promise<ActionState> {
     const result = await runAgentForDispute(parsed.data.disputeId, {
       now: () => new Date(),
       createId: () => crypto.randomUUID(),
+      runAgent: getAgentRunner(),
     });
     if (!result.ok) {
       revalidateDispute(parsed.data.disputeId);

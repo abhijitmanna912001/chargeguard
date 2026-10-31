@@ -44,6 +44,8 @@ ChargeGuard is an AI merchant-support teammate for payment disputes (chargebacks
 - `npm run db:reset-demo -- --yes` wipes the dev database (all six tables) and reseeds it; never run it unasked.
 - Secrets only in env vars.
 - Always cap `max_tokens`.
+- The agent mode is decided in one place, `app/agent-mode.ts` (`AGENT_MODE`: `mock` by default, `live` for the real agent; anything else falls back to `mock`). Nothing else reads `AGENT_MODE`. Read it at request time, after a dynamic await, never in a static shell.
+- Tests and checks must never call the live model. Inject `createMockCallSarvam` (or mock `callSarvam`), block `fetch`, and never run `smoke:sarvam` or a live-mode app as part of a check.
 - Deterministic rules decide the final action; the model only recommends.
 - Write tests for decision logic.
 - Check current Prisma docs before writing Prisma code.

@@ -31,3 +31,24 @@ export async function getRecommendation(
   const row = await db.recommendation.findUnique({ where: { id } });
   return row ? recommendationFromRow(row) : null;
 }
+
+/**
+ * Latest recommendation for each of many disputes, in ONE query (no N+1).
+ * Disputes with none are absent from the map. Ordering matches
+ * getLatestRecommendation (createdAt desc, id desc); `distinct` then keeps the
+ * first row per disputeId. Prisma applies `distinct` in memory unless the
+ * nativeDistinct preview feature is on, so this reads every recommendation of
+ * the listed disputes; fine at this scale (a handful per dispute).
+ */
+export async function getLatestRecommendations(
+  disputeIds: readonly string[],
+  db: DbClient = prisma,
+): Promise<Map<string, Recommendation>> {
+  if (disputeIds.length === 0) return new Map();
+  const rows = await db.recommendation.findMany({
+    where: { disputeId: { in: [...disputeIds] } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    distinct: ["disputeId"],
+  });
+  return new Map(rows.map((row) => [row.disputeId, recommendationFromRow(row)]));
+}

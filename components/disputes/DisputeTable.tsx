@@ -1,13 +1,21 @@
-import type { Dispute } from "@/contracts";
+import type { Dispute, Recommendation } from "@/contracts";
 import { formatDeadline, formatPaise } from "@/lib/format";
 import Link from "next/link";
-import { MockRecommendation } from "./MockRecommendation";
 import { StatusBadge } from "./StatusBadge";
+import { StoredRecommendation } from "./StoredRecommendation";
 
 const th = "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400";
 const td = "px-4 py-3 align-middle text-sm";
 
-export function DisputeTable({ disputes, now }: { disputes: Dispute[]; now: Date }) {
+type Props = {
+  disputes: Dispute[];
+  now: Date;
+  /** Latest stored recommendation per dispute id; a missing key means "Not run yet". */
+  recommendations: ReadonlyMap<string, Recommendation>;
+  isMockAgent: boolean;
+};
+
+export function DisputeTable({ disputes, now, recommendations, isMockAgent }: Props) {
   if (disputes.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-zinc-300 p-6 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
@@ -25,7 +33,7 @@ export function DisputeTable({ disputes, now }: { disputes: Dispute[]; now: Date
     >
       <table className="w-full min-w-[44rem] border-collapse">
         <caption className="px-4 py-3 text-left text-sm text-zinc-600 dark:text-zinc-400">
-          Open payment disputes, with the deadline for responding and the suggested next action.
+          Open payment disputes, with the deadline for responding and the latest recommended next action.
         </caption>
         <thead className="bg-zinc-50 dark:bg-zinc-900">
           <tr>
@@ -56,7 +64,7 @@ export function DisputeTable({ disputes, now }: { disputes: Dispute[]; now: Date
                   {formatDeadline(dispute.deadline, now)}
                 </time>
               </td>
-              <td className={td}><MockRecommendation dispute={dispute} /></td>
+              <td className={td}><StoredRecommendation recommendation={recommendations.get(dispute.id)} isMock={isMockAgent} /></td>
             </tr>
           ))}
         </tbody>

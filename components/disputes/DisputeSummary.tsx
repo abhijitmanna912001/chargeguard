@@ -1,7 +1,7 @@
-import type { Dispute } from "@/contracts";
+import type { Dispute, Recommendation } from "@/contracts";
 import { formatDateTime, formatDeadline, formatPaise } from "@/lib/format";
-import { MockRecommendation } from "./MockRecommendation";
 import { StatusBadge } from "./StatusBadge";
+import { StoredRecommendation } from "./StoredRecommendation";
 
 function Item({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -12,7 +12,14 @@ function Item({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-export function DisputeSummary({ dispute, now }: { dispute: Dispute; now: Date }) {
+type Props = {
+  dispute: Dispute;
+  now: Date;
+  recommendation: Recommendation | null;
+  isMockAgent: boolean;
+};
+
+export function DisputeSummary({ dispute, now, recommendation, isMockAgent }: Props) {
   return (
     <section aria-labelledby="summary-heading" className="rounded-lg border border-zinc-200 p-5 dark:border-zinc-800">
       <h2 id="summary-heading" className="font-mono text-lg font-semibold">{dispute.id}</h2>
@@ -24,7 +31,7 @@ export function DisputeSummary({ dispute, now }: { dispute: Dispute; now: Date }
           <time dateTime={dispute.deadline}>{formatDeadline(dispute.deadline, now)}</time>
           <span className="block text-xs text-zinc-600 dark:text-zinc-400">{formatDateTime(dispute.deadline)}</span>
         </Item>
-        <Item label="Recommendation"><MockRecommendation dispute={dispute} /></Item>
+        <Item label="Recommendation"><StoredRecommendation recommendation={recommendation} isMock={isMockAgent} /></Item>
       </dl>
     </section>
   );
