@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - "ci/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per PR (or branch); a newer push cancels the older run. Runs on main
+# are never cancelled, so every merged commit keeps its own result.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  verify:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Placeholder only: satisfies prisma7.config.ts and lib/db/prisma.ts at
+      # generate and build time. No database runs in CI and nothing connects.
+      # TEST_DATABASE_URL is deliberately unset, so the *.db.test.ts suites skip.
+      # No Sarvam key: every agent test injects a mocked model.
+      DATABASE_URL: postgresql://chargeguard:chargeguard@localhost:5432/chargeguard?schema=public
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint
+
+      # PageProps / LayoutProps and next-env.d.ts are generated, git-ignored
+      # files; a fresh checkout has none until typegen (or dev/build) runs.
+      - name: Generate Next.js route types
+        run: npx next typegen
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
