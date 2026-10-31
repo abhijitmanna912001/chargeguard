@@ -1,10 +1,5 @@
 @import "tailwindcss";
 
-/* The UI is light-only. Existing components still carry `dark:` classes; this
-   ties that variant to a `.dark` class nothing sets, so a dark OS setting no
-   longer applies half a dark theme to a light page. */
-@custom-variant dark (&:where(.dark, .dark *));
-
 /* Design tokens. This is the only file with colour values: components use the
    utilities these generate (bg-surface, text-ink-muted, border-line, ...).
    All text pairs are checked at WCAG AA (4.5:1) or better. */
@@ -66,6 +61,11 @@
 }
 
 @layer base {
+  /* The UI is light-only: form controls and scrollbars stay light under a dark OS setting. */
+  :root {
+    color-scheme: light;
+  }
+
   body {
     background: var(--color-canvas);
     color: var(--color-ink);

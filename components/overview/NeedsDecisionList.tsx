@@ -39,7 +39,7 @@ export function NeedsDecisionList({ disputes, now, recommendations }: Props) {
                 <p className="truncate font-mono text-sm font-semibold">{d.id}</p>
                 <p className="mt-1 text-sm text-ink-muted">{reasonLabel(d.reasonCode)}</p>
                 {recommendation && (
-                  <p className="mt-2 flex items-center gap-2 text-xs text-ink-muted">
+                  <p className="mt-2 flex flex-col items-start gap-1 text-xs text-ink-muted sm:flex-row sm:items-center sm:gap-2">
                     Agent recommends <ActionBadge action={recommendation.finalAction} />
                   </p>
                 )}

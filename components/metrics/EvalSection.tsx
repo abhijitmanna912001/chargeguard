@@ -1,28 +1,31 @@
+import { FlaskConical } from "lucide-react";
 import type { EvalCaseResult } from "@/contracts";
 import type { LoadEvalResult } from "@/lib/eval/load-results";
 import { formatDateTime, humanizeEnum } from "@/lib/format";
 import { ActionBadge } from "@/components/disputes/ActionBadge";
+import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 
-const th = "px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400";
-const td = "px-3 py-3 align-top text-sm";
-const muted = "text-zinc-600 dark:text-zinc-400";
+const th = "whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted";
+const td = "px-4 py-3 align-top text-sm";
+const muted = "text-ink-muted";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-      <dt className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>{label}</dt>
-      <dd className="mt-1 text-2xl font-semibold tabular-nums">{value}</dd>
-    </div>
+    <Card className="p-4">
+      <dt className="text-sm font-medium text-ink-muted">{label}</dt>
+      <dd className="mt-2 text-2xl font-semibold tabular-nums">{value}</dd>
+    </Card>
   );
 }
 
 function CorrectLabel({ correct }: { correct: boolean }) {
   return correct ? (
-    <span className="font-semibold text-green-800 dark:text-green-300">
+    <span className="font-semibold text-success-fg">
       <span aria-hidden="true">✓ </span>Correct
     </span>
   ) : (
-    <span className="font-semibold text-red-800 dark:text-red-300">
+    <span className="font-semibold text-danger-fg">
       <span aria-hidden="true">✗ </span>Incorrect
     </span>
   );
@@ -66,14 +69,16 @@ function CaseRow({ c }: { c: EvalCaseResult }) {
 export function EvalSection({ result }: { result: LoadEvalResult }) {
   if (result.status === "missing") {
     return (
-      <p className="rounded-lg border border-dashed border-zinc-300 p-6 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
-        No evaluation results yet. Run <code className="font-mono">npm run eval</code>.
-      </p>
+      <EmptyState
+        icon={<FlaskConical className="size-6" />}
+        title="No evaluation results yet."
+        description="Run npm run eval."
+      />
     );
   }
   if (result.status === "invalid") {
     return (
-      <p role="alert" className="rounded-lg border border-amber-400 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+      <p role="alert" className="rounded-lg border border-warning-line bg-warning-bg p-4 text-sm text-warning-fg">
         The evaluation results could not be shown. {result.message}
       </p>
     );
@@ -87,43 +92,40 @@ export function EvalSection({ result }: { result: LoadEvalResult }) {
         Generated <time dateTime={results.generatedAt}>{formatDateTime(results.generatedAt)}</time> with model{" "}
         <span className="font-mono">{results.model}</span>.
       </p>
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <Stat label="Accuracy" value={`${Math.round(summary.accuracy * 100)}%`} />
         <Stat label="Correct" value={`${summary.correct} of ${summary.total}`} />
         <Stat label="Model failures" value={String(summary.modelFailures)} />
         <Stat label="Median latency" value={ms(summary.medianLatencyMs)} />
         <Stat label="Max latency" value={ms(summary.maxLatencyMs)} />
       </dl>
-      <div
-        role="region"
-        aria-label="Per-case evaluation results"
-        tabIndex={0}
-        className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800"
-      >
-        <table className="w-full min-w-[64rem] border-collapse">
-          <caption className={`px-3 py-3 text-left text-sm ${muted}`}>
-            One row per demo fixture: what was expected, what the model said, and what the rules finally decided.
-          </caption>
-          <thead className="bg-zinc-50 dark:bg-zinc-900">
-            <tr>
-              <th scope="col" className={th}>Dispute</th>
-              <th scope="col" className={th}>Expected</th>
-              <th scope="col" className={th}>Model said</th>
-              <th scope="col" className={th}>Final</th>
-              <th scope="col" className={th}>Result</th>
-              <th scope="col" className={th}>Confidence</th>
-              <th scope="col" className={th}>Flags</th>
-              <th scope="col" className={th}>Evidence met</th>
-              <th scope="col" className={th}>Latency</th>
-              <th scope="col" className={th}>Attempts</th>
-              <th scope="col" className={th}>Tokens</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {results.cases.map((c) => <CaseRow key={c.disputeId} c={c} />)}
-          </tbody>
-        </table>
-      </div>
+      <Card>
+        <div role="region" aria-label="Per-case evaluation results" tabIndex={0} className="overflow-x-auto rounded-lg">
+          <table className="w-full min-w-[64rem] border-collapse">
+            <caption className={`px-4 py-3 text-left text-sm ${muted}`}>
+              One row per demo fixture: what was expected, what the model said, and what the rules finally decided.
+            </caption>
+            <thead className="border-y border-line">
+              <tr>
+                <th scope="col" className={th}>Dispute</th>
+                <th scope="col" className={th}>Expected</th>
+                <th scope="col" className={th}>Model said</th>
+                <th scope="col" className={th}>Final</th>
+                <th scope="col" className={th}>Result</th>
+                <th scope="col" className={th}>Confidence</th>
+                <th scope="col" className={th}>Flags</th>
+                <th scope="col" className={th}>Evidence met</th>
+                <th scope="col" className={th}>Latency</th>
+                <th scope="col" className={th}>Attempts</th>
+                <th scope="col" className={th}>Tokens</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {results.cases.map((c) => <CaseRow key={c.disputeId} c={c} />)}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }

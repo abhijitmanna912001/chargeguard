@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { PageShell } from "@/components/ui/PageShell";
 import { EvalSection } from "@/components/metrics/EvalSection";
 import { MetricsSkeleton } from "@/components/metrics/MetricsSkeleton";
@@ -18,28 +19,30 @@ export const metadata: Metadata = {
 export default function MetricsPage() {
   return (
     <PageShell>
-      <h1 className="text-2xl font-semibold tracking-tight">Metrics</h1>
+      <PageHeader title="Metrics" />
 
-      <section aria-labelledby="eval-heading" className="mt-8">
-        <h2 id="eval-heading" className="text-lg font-semibold">Agent evaluation (synthetic demo data)</h2>
-        <p className="mt-1 mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-          These results come from five synthetic demo fixtures, not from real disputes. They show how the agent behaved
-          on those five cases and are not a measure of general accuracy.
-        </p>
-        <Suspense fallback={<MetricsSkeleton label="Loading evaluation results…" />}>
-          <EvalLoader />
-        </Suspense>
-      </section>
+      <div className="space-y-12">
+        <section aria-labelledby="eval-heading">
+          <h2 id="eval-heading" className="text-lg font-semibold">Agent evaluation (synthetic demo data)</h2>
+          <p className="mt-1 mb-4 max-w-3xl text-sm text-ink-muted">
+            These results come from five synthetic demo fixtures, not from real disputes. They show how the agent behaved
+            on those five cases and are not a measure of general accuracy.
+          </p>
+          <Suspense fallback={<MetricsSkeleton label="Loading evaluation results…" />}>
+            <EvalLoader />
+          </Suspense>
+        </section>
 
-      <section aria-labelledby="ops-heading" className="mt-12">
-        <h2 id="ops-heading" className="text-lg font-semibold">Live operations</h2>
-        <p className="mt-1 mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-          Counts from the database, read fresh on every load.
-        </p>
-        <Suspense fallback={<MetricsSkeleton label="Loading live operations…" />}>
-          <OperationsLoader />
-        </Suspense>
-      </section>
+        <section aria-labelledby="ops-heading">
+          <h2 id="ops-heading" className="text-lg font-semibold">Live operations</h2>
+          <p className="mt-1 mb-4 text-sm text-ink-muted">
+            Counts from the database, read fresh on every load.
+          </p>
+          <Suspense fallback={<MetricsSkeleton label="Loading live operations…" />}>
+            <OperationsLoader />
+          </Suspense>
+        </section>
+      </div>
     </PageShell>
   );
 }

@@ -93,7 +93,8 @@ describe("EvalSection", () => {
 
   it("shows the missing-file message", () => {
     render(<EvalSection result={{ status: "missing" }} />);
-    expect(screen.getByText(/No evaluation results yet\./)).toHaveTextContent("Run npm run eval.");
+    expect(screen.getByText("No evaluation results yet.")).toBeInTheDocument();
+    expect(screen.getByText("Run npm run eval.")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 

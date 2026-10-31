@@ -1,9 +1,10 @@
 import type { OperationalMetrics } from "@/lib/metrics/operations";
 import { formatSeconds, type ApprovalOutcomeKey } from "@/lib/metrics/aggregate";
+import { Card } from "@/components/ui/Card";
 import { humanizeEnum } from "@/lib/format";
 
-const th = "px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400";
-const td = "px-3 py-3 text-sm";
+const th = "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted";
+const td = "px-4 py-3 text-sm";
 
 const OUTCOME_LABEL: Record<ApprovalOutcomeKey, string> = {
   pending: "Pending",
@@ -22,32 +23,34 @@ function MetricTable({
   rows: { label: string; value: string }[];
 }) {
   return (
-    <div role="region" aria-label={caption} tabIndex={0} className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-      <table className="w-full min-w-[18rem] border-collapse">
-        <caption className="px-3 py-3 text-left text-sm font-medium">{caption}</caption>
-        <thead className="bg-zinc-50 dark:bg-zinc-900">
-          <tr>
-            <th scope="col" className={th}>{labelHeading}</th>
-            <th scope="col" className={`${th} text-right`}>Value</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-          {rows.map((r) => (
-            <tr key={r.label}>
-              <th scope="row" className={`${td} text-left font-normal`}>{r.label}</th>
-              <td className={`${td} text-right tabular-nums`}>{r.value}</td>
+    <Card>
+      <div role="region" aria-label={caption} tabIndex={0} className="overflow-x-auto rounded-lg">
+        <table className="w-full border-collapse">
+          <caption className="px-4 py-3 text-left text-sm font-semibold">{caption}</caption>
+          <thead className="border-y border-line">
+            <tr>
+              <th scope="col" className={th}>{labelHeading}</th>
+              <th scope="col" className={`${th} text-right`}>Value</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {rows.map((r) => (
+              <tr key={r.label}>
+                <th scope="row" className={`${td} text-left font-normal`}>{r.label}</th>
+                <td className={`${td} text-right tabular-nums`}>{r.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 
 export function OperationsSection({ metrics }: { metrics: OperationalMetrics }) {
   const t = metrics.timeToDecision;
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid items-start gap-4 md:grid-cols-3">
       <MetricTable
         caption={`Disputes by status (${metrics.totalDisputes} in total)`}
         labelHeading="Status"

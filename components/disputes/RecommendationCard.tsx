@@ -82,7 +82,7 @@ export function RecommendationCard({ recommendation, isMock }: { recommendation:
         modelOutput && (
           <div>
             <h4 className={heading}>Rationale</h4>
-            <p className="mt-1.5 max-w-prose text-base leading-relaxed">{modelOutput.reasoning}</p>
+            <p className="mt-1.5 max-w-prose text-sm leading-relaxed">{modelOutput.reasoning}</p>
             {modelOutput.action !== finalAction && (
               <p className="mt-2 max-w-prose text-sm text-ink-muted">
                 The model suggested {modelOutput.action}, but the rules changed it to {finalAction}

@@ -125,9 +125,9 @@ async function openFresh(width: number, path: string, height = 800) {
   return { ctx, page, errors, status: resp?.status() ?? 0 };
 }
 
-// Disputes list and Metrics: HTTP, console, scroll (Metrics is restyled in Stage 3, so only reported).
+// Disputes list: HTTP, console, scroll, axe, focus, row click. Metrics has its own block below.
 for (const width of [360, 1280]) {
-  for (const [name, path] of [["disputes", "/disputes"], ["metrics", "/metrics"]] as const) {
+  for (const [name, path] of [["disputes", "/disputes"]] as const) {
     const { ctx, page, errors, status } = await openFresh(width, path);
     await page.screenshot({ path: `${OUT}/${name}-${width}.png`, fullPage: true });
     const { sw, cw } = await noHScroll(page);
@@ -154,6 +154,79 @@ for (const width of [360, 1280]) {
         record(`disputes ${width}: clicking the empty side of a row opens it`, /\/disputes\/[^/]+$/.test(new URL(page.url()).pathname), new URL(page.url()).pathname);
       }
     }
+    await ctx.close();
+  }
+}
+
+// Metrics at all three widths: HTTP, console, scroll, axe, focus ring, light theme under a dark OS setting.
+for (const width of [360, 768, 1280]) {
+  const { ctx, page, errors, status } = await openFresh(width, "/metrics");
+  await page.getByRole("heading", { name: "Live operations" }).waitFor({ timeout: 20000 });
+  await page.locator("table").first().waitFor({ timeout: 20000 }).catch(() => {});
+  await page.screenshot({ path: `${OUT}/metrics-${width}.png`, fullPage: true });
+  const tag = `metrics ${width}`;
+  record(`${tag}: HTTP ok`, status < 400, String(status));
+  record(`${tag}: no console errors`, errors.length === 0, errors.join(" | "));
+  const { sw, cw } = await noHScroll(page);
+  record(`${tag}: no horizontal scroll`, sw <= cw, `scrollWidth ${sw} / clientWidth ${cw}`);
+  const axe = await axeSerious(page);
+  record(`${tag}: axe serious/critical`, axe.length === 0, `${axe.length} finding(s)`);
+  axe.forEach((a) => console.log(`   axe: ${a}`));
+  const { log, bad } = await tabAudit(page, 12);
+  console.log(`   tab order @${width}: ${log.join(" > ")}`);
+  record(`${tag}: focus indicator on 12 tabs`, bad.length === 0, bad.length ? `no ring: ${bad.join(", ")}` : "");
+  await ctx.close();
+}
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: "dark" });
+  const page = await ctx.newPage();
+  await page.goto(`${BASE}/metrics`);
+  await page.getByRole("heading", { name: "Live operations" }).waitFor({ timeout: 20000 });
+  const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  record("metrics: stays light under a dark OS setting", bg === "rgb(245, 247, 251)", bg);
+  await ctx.close();
+}
+
+// 404 page: real 404 status, heading, link back, no horizontal scroll, axe, focus ring.
+// (No console-error check: the browser itself logs the 404 response.)
+for (const width of [360, 768, 1280]) {
+  const { ctx, page, status } = await openFresh(width, "/this-page-does-not-exist");
+  const tag = `404 ${width}`;
+  await page.screenshot({ path: `${OUT}/not-found-${width}.png`, fullPage: true });
+  record(`${tag}: HTTP 404`, status === 404, String(status));
+  record(`${tag}: has the Page not found heading`, await page.getByRole("heading", { level: 1, name: "Page not found" }).isVisible());
+  record(`${tag}: has a link back to the overview`, await page.getByRole("link", { name: "Back to overview" }).isVisible());
+  const { sw, cw } = await noHScroll(page);
+  record(`${tag}: no horizontal scroll`, sw <= cw, `scrollWidth ${sw} / clientWidth ${cw}`);
+  const axe = await axeSerious(page);
+  record(`${tag}: axe serious/critical`, axe.length === 0, `${axe.length} finding(s)`);
+  axe.forEach((a) => console.log(`   axe: ${a}`));
+  const { log, bad } = await tabAudit(page, 8);
+  console.log(`   tab order @${width}: ${log.join(" > ")}`);
+  record(`${tag}: focus indicator on 8 tabs`, bad.length === 0, bad.length ? `no ring: ${bad.join(", ")}` : "");
+  await ctx.close();
+}
+
+// Skip link: the first Tab stop on every page, visible when focused, moves focus to <main>.
+for (const [name, path] of [["overview", "/"], ["disputes", "/disputes"], ["metrics", "/metrics"], ["404", "/this-page-does-not-exist"]] as const) {
+  for (const width of [360, 1280]) {
+    const { ctx, page } = await openFresh(width, path);
+    const tag = `skip link ${name} ${width}`;
+    await page.keyboard.press("Tab");
+    const first = await page.evaluate(() => {
+      const el = document.activeElement as HTMLAnchorElement | null;
+      const r = el?.getBoundingClientRect();
+      return {
+        text: (el?.textContent ?? "").trim(),
+        href: el?.getAttribute("href") ?? null,
+        onScreen: !!r && r.width > 1 && r.height > 1 && r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight && r.right <= window.innerWidth,
+      };
+    });
+    record(`${tag}: first Tab stop is Skip to content`, first.text === "Skip to content" && first.href === "#main-content", JSON.stringify(first));
+    record(`${tag}: visible on screen when focused`, first.onScreen);
+    await page.keyboard.press("Enter");
+    const target = await page.evaluate(() => ({ id: document.activeElement?.id ?? "", tag: document.activeElement?.tagName ?? "" }));
+    record(`${tag}: Enter moves focus to <main id="main-content">`, target.id === "main-content" && target.tag === "MAIN", JSON.stringify(target));
     await ctx.close();
   }
 }
