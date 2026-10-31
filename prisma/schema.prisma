@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Contract note: contracts/ (Zod) is the source of truth for enum-like values
+// and cross-field rules. Columns below are plain String / String[] on purpose;
+// validate at the mapper boundary, do not add Prisma enums here.
+
+model Dispute {
+  id            String   @id
+  transactionId String
+  amount        Int // paise, matches PaiseSchema cap (2147483647)
+  reasonCode    String
+  deadline      DateTime @db.Timestamptz
+  createdAt     DateTime @db.Timestamptz
+  status        String
+
+  evidence         Evidence[]
+  recommendations  Recommendation[]
+  approvalRequests ApprovalRequest[]
+  submissions      Submission[]
+  actionLogs       ActionLog[]
+}
+
+model Evidence {
+  id          String   @id
+  disputeId   String
+  type        String
+  payload     Json // variant-specific fields; parse with EvidenceSchema
+  collectedAt DateTime @db.Timestamptz
+
+  dispute Dispute @relation(fields: [disputeId], references: [id])
+
+  @@index([disputeId])
+}
+
+model Recommendation {
+  id             String   @id
+  disputeId      String
+  createdAt      DateTime @db.Timestamptz
+  modelOutput    Json? // null means the model failed
+  finalAction    String
+  overrideReason String?
+  flags          String[]
+
+  dispute Dispute @relation(fields: [disputeId], references: [id])
+
+  @@index([disputeId, createdAt])
+}
+
+model ApprovalRequest {
+  id             String    @id
+  disputeId      String
+  requestedAt    DateTime  @db.Timestamptz
+  flags          String[]
+  proposedAction String
+  status         String
+  resolvedAction String?
+  decidedBy      String?
+  decidedAt      DateTime? @db.Timestamptz
+  note           String?
+
+  dispute Dispute @relation(fields: [disputeId], references: [id])
+
+  @@index([disputeId])
+}
+
+model Submission {
+  id             String    @id
+  disputeId      String
+  idempotencyKey String    @unique
+  status         String
+  submittedAt    DateTime? @db.Timestamptz
+  providerRef    String?
+  errorMessage   String?
+
+  dispute Dispute @relation(fields: [disputeId], references: [id])
+
+  @@index([disputeId])
+}
+
+// Append-only: create and read only. No updatedAt. Enforced in the repository,
+// which exposes only append and list and has no update or delete function.
+// A DB trigger is deferred.
+model ActionLog {
+  id           String   @id
+  disputeId    String
+  timestamp    DateTime @db.Timestamptz
+  step         String
+  actor        String
+  summary      String
+  evidenceRefs String[]
+  confidence   Float?
+  ruleId       String?
+  outcome      String
+
+  dispute Dispute @relation(fields: [disputeId], references: [id], onDelete: Restrict)
+
+  @@index([disputeId, timestamp])
+}
