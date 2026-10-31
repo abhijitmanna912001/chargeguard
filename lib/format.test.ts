@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDeadline, formatPaise } from "./format";
+import { formatDateTime, formatDeadline, formatPaise, humanizeEnum } from "./format";
 
 describe("formatPaise", () => {
   it("formats rupees with en-IN grouping and two decimals", () => {
@@ -43,5 +43,26 @@ describe("formatDeadline", () => {
   });
   it("throws on an invalid date", () => {
     expect(() => formatDeadline("not a date", now)).toThrow();
+  });
+});
+
+describe("humanizeEnum", () => {
+  it("turns snake_case into a sentence-case label", () => {
+    expect(humanizeEnum("in_transit")).toBe("In transit");
+    expect(humanizeEnum("returned_to_origin")).toBe("Returned to origin");
+    expect(humanizeEnum("whatsapp")).toBe("Whatsapp");
+    expect(humanizeEnum("")).toBe("");
+  });
+});
+
+describe("formatDateTime", () => {
+  it("shows UTC instants in India time", () => {
+    expect(formatDateTime("2026-11-02T04:30:00.000Z")).toBe("2 Nov 2026, 10:00 am IST");
+  });
+  it("rolls over the date across the UTC/IST boundary", () => {
+    expect(formatDateTime("2026-11-02T20:00:00.000Z")).toMatch(/^3 Nov 2026, 1:30 am IST$/);
+  });
+  it("throws on an invalid date", () => {
+    expect(() => formatDateTime("nope")).toThrow();
   });
 });

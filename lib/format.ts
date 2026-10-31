@@ -36,3 +36,24 @@ export function formatDeadline(isoString: string, now: Date): string {
 
   return overdue ? `Overdue by ${span}` : `${span} left`;
 }
+
+/** "in_transit" -> "In transit". For showing contract enum values to people. */
+export function humanizeEnum(value: string): string {
+  const spaced = value.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+const dateTime = new Intl.DateTimeFormat("en-IN", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Asia/Kolkata",
+});
+
+/** ISO string -> "2 Nov 2026, 10:00 am IST". Always shown in India time. */
+export function formatDateTime(isoString: string): string {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid date: ${isoString}`);
+  }
+  return `${dateTime.format(date)} IST`;
+}

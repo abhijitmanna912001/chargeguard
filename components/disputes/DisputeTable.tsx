@@ -1,7 +1,7 @@
 import type { Dispute } from "@/contracts";
 import { formatDeadline, formatPaise } from "@/lib/format";
-import { getMockRecommendation } from "@/lib/mock/recommendation";
-import { ActionBadge } from "./ActionBadge";
+import Link from "next/link";
+import { MockRecommendation } from "./MockRecommendation";
 import { StatusBadge } from "./StatusBadge";
 
 const th = "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400";
@@ -38,30 +38,27 @@ export function DisputeTable({ disputes, now }: { disputes: Dispute[]; now: Date
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-          {disputes.map((dispute) => {
-            const recommendation = getMockRecommendation(dispute);
-            return (
-              <tr key={dispute.id}>
-                <th scope="row" className={`${td} font-mono font-medium`}>{dispute.id}</th>
-                <td className={`${td} text-right tabular-nums`}>{formatPaise(dispute.amount)}</td>
-                <td className={`${td} font-mono`}>{dispute.reasonCode}</td>
-                <td className={td}><StatusBadge status={dispute.status} /></td>
-                <td className={td}>
-                  <time dateTime={dispute.deadline} title={dispute.deadline}>
-                    {formatDeadline(dispute.deadline, now)}
-                  </time>
-                </td>
-                <td className={td}>
-                  <span className="inline-flex items-center gap-2">
-                    <ActionBadge action={recommendation.action} />
-                    <span className="rounded border border-dashed border-zinc-500 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-                      {recommendation.label}
-                    </span>
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
+          {disputes.map((dispute) => (
+            <tr key={dispute.id}>
+              <th scope="row" className={`${td} text-left font-mono font-medium`}>
+                <Link
+                  href={`/disputes/${encodeURIComponent(dispute.id)}`}
+                  className="underline underline-offset-2 hover:text-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 dark:hover:text-indigo-300"
+                >
+                  {dispute.id}
+                </Link>
+              </th>
+              <td className={`${td} text-right tabular-nums`}>{formatPaise(dispute.amount)}</td>
+              <td className={`${td} font-mono`}>{dispute.reasonCode}</td>
+              <td className={td}><StatusBadge status={dispute.status} /></td>
+              <td className={td}>
+                <time dateTime={dispute.deadline} title={dispute.deadline}>
+                  {formatDeadline(dispute.deadline, now)}
+                </time>
+              </td>
+              <td className={td}><MockRecommendation dispute={dispute} /></td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
