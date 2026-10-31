@@ -6,19 +6,26 @@ import { BLOCKING_FLAGS, type Action, type Flag, type ModelOutput, type Paise } 
 //
 // Pure functions: no clock, no I/O. The caller passes "now" in.
 //
-// The model only recommends. decideFinalAction applies these rules, in order:
+// The model only recommends. decideFinalAction applies these rules, in order,
+// to produce the PROPOSED final action:
 //   1. No usable model output        -> escalate
 //   2. amount_over_limit             -> escalate
 //   3. low_confidence                -> escalate
 //   4. model recommends escalate     -> escalate
-//   5. model recommends accept       -> accept (no confirmed rule changes it)
+//   5. model recommends accept       -> accept is kept as the proposal
+//                                       (no confirmed rule changes it)
 //   6. model recommends defend       -> escalate if any BLOCKING_FLAGS, else defend
 //
-// The policy is conservative: a blocking flag only ever stops a defence. It
-// never turns a recommendation into accept, and there is no automatic-accept
-// rule, not even for an expired deadline (deadline_expired is blocking, so it
+// Accept is only ever the model's recommendation, preserved. No rule produces
+// accept on its own: rules can only move a proposal to escalate. Blocking
+// flags stop a defence and lead to escalation; they never lead to accept, and
+// neither does an expired deadline (deadline_expired is blocking, so it
 // prevents defend and nothing more). deadline_at_risk and refund_issued are
 // not blocking and never change the action on their own.
+//
+// Nothing here is executed. runAgent() returns a Recommendation and never
+// approves, accepts or submits anything; every proposed action, accept
+// included, goes through the downstream human approval workflow.
 
 /** Escalate when the disputed amount is strictly above this. 1,000,000 paise = ₹10,000. */
 export const AMOUNT_ESCALATION_THRESHOLD_PAISE: Paise = 1_000_000;
@@ -77,6 +84,7 @@ export type FinalDecision = {
   overrideReason?: string;
 };
 
+/** The proposed action for human approval, per the order above. Executes nothing. */
 export function decideFinalAction(modelOutput: ModelOutput | null, flags: readonly Flag[]): FinalDecision {
   if (modelOutput === null) {
     return {
