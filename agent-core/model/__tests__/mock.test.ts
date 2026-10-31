@@ -75,7 +75,7 @@ describe("createMockCallSarvam", () => {
   });
 
   it("fails with the exact ModelError it was given", async () => {
-    const error = new ModelError("timeout", "No response from Sarvam within 5000ms", { retryable: true, attempts: 3 });
+    const error = new ModelError("timeout", "No response from Sarvam within 5000ms", { retryable: true, attemptCount: 3 });
     const result = await createMockCallSarvam(error)(request);
     expect(result).toEqual({ ok: false, error });
     if (!result.ok) expect(result.error).toBe(error);

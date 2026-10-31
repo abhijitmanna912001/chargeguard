@@ -43,6 +43,39 @@ const CompletionSchema = z.object({
 type Completion = z.infer<typeof CompletionSchema>;
 type Choice = Completion["choices"][number];
 
+/** Provider ids and model names worth keeping: short plain tokens, never free text. */
+export const SAFE_PROVIDER_TOKEN = /^[A-Za-z0-9._:/-]{1,128}$/;
+
+const TokenCountSchema = z.number().int().nonnegative();
+
+// What can still be read, field by field, from a body that failed
+// CompletionSchema. Each field is validated on its own and dropped if bad;
+// choices (and so finish_reason) are never read from a broken envelope.
+const SalvageSchema = z
+  .object({
+    id: z.string().regex(SAFE_PROVIDER_TOKEN).optional().catch(undefined),
+    model: z.string().regex(SAFE_PROVIDER_TOKEN).optional().catch(undefined),
+    usage: z
+      .object({ prompt_tokens: TokenCountSchema, completion_tokens: TokenCountSchema, total_tokens: TokenCountSchema })
+      .optional()
+      .catch(undefined),
+  })
+  .catch({});
+
+function salvageMetadata(body: unknown, latencyMs: number, attemptCount: number): ResponseMetadata | undefined {
+  const { id, model, usage } = SalvageSchema.parse(body);
+  if (id === undefined && model === undefined && usage === undefined) return undefined;
+  return {
+    ...(id !== undefined ? { providerRequestId: id } : {}),
+    ...(model !== undefined ? { model } : {}),
+    ...(usage
+      ? { usage: { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens, totalTokens: usage.total_tokens } }
+      : {}),
+    latencyMs,
+    attemptCount,
+  };
+}
+
 const WireToolCallSchema = z.object({
   id: z.string().min(1),
   type: z.literal("function"),
@@ -86,14 +119,17 @@ export function strictRoot<T>(schema: z.ZodType<T>): z.ZodType<T> {
 
 type ParsedEnvelope = { ok: true; choice: Choice; metadata: ResponseMetadata } | { ok: false; error: ModelError };
 
-export function parseEnvelope(body: unknown, latencyMs: number, attempts: number): ParsedEnvelope {
+export function parseEnvelope(body: unknown, latencyMs: number, attemptCount: number): ParsedEnvelope {
   const parsed = CompletionSchema.safeParse(body);
   if (!parsed.success) {
+    const salvaged = salvageMetadata(body, latencyMs, attemptCount);
     return {
       ok: false,
       error: new ModelError("invalid_envelope", "Sarvam response did not match the chat completion shape", {
-        attempts,
+        attemptCount,
+        latencyMs,
         issues: toIssues(parsed.error),
+        ...(salvaged ? { metadata: salvaged, providerRequestId: salvaged.providerRequestId } : {}),
       }),
     };
   }
@@ -113,7 +149,7 @@ export function parseEnvelope(body: unknown, latencyMs: number, attempts: number
         }
       : undefined,
     latencyMs,
-    attempts,
+    attemptCount,
   };
   if (!choice) {
     return { ok: false, error: failure("empty_response", "Sarvam returned no choices", metadata) };
@@ -128,7 +164,8 @@ function failure(
   extra: { issues?: ValidationIssue[]; toolName?: string } = {},
 ): ModelError {
   return new ModelError(kind, message, {
-    attempts: metadata.attempts,
+    attemptCount: metadata.attemptCount,
+    latencyMs: metadata.latencyMs,
     providerRequestId: metadata.providerRequestId,
     metadata,
     ...extra,

@@ -100,7 +100,7 @@ describe("runAgent over the shared fixtures", () => {
 
 describe("runAgent over the shared fixtures when the model fails", () => {
   const failures: [string, MockReply][] = [
-    ["provider error", new ModelError("provider_error", "Sarvam server error (HTTP 500)", { status: 500, attempts: 3 })],
+    ["provider error", new ModelError("provider_error", "Sarvam server error (HTTP 500)", { status: 500, attemptCount: 3 })],
     [
       "malformed output",
       { action: "win", confidence: 0.9, reasoning: "PARTIAL-MODEL-OUTPUT", evidenceRefs: [] } as unknown as ModelOutput,

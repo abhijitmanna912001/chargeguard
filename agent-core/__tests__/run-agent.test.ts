@@ -21,7 +21,7 @@ import {
   type RunAgentDependencies,
   type StructuredCallSarvam,
 } from "../index";
-import { MAX_TOKENS_CAP, ModelError, type StructuredRequest } from "../model";
+import { MAX_TOKENS_CAP, ModelError, type ModelCallMetadata, type StructuredRequest } from "../model";
 import { parseEnvelope, parseStructured } from "../model/parse";
 import type { ModelContext } from "../model-context";
 
@@ -331,10 +331,10 @@ describe("model behaviour", () => {
   });
 
   const failures: [string, ModelError, string][] = [
-    ["API failure", new ModelError("provider_error", "Sarvam server error (HTTP 500)", { status: 500, attempts: 3 }), "provider_error"],
-    ["rate limit exhaustion", new ModelError("rate_limited", "Sarvam rate limit hit (HTTP 429)", { attempts: 3 }), "rate_limited"],
+    ["API failure", new ModelError("provider_error", "Sarvam server error (HTTP 500)", { status: 500, attemptCount: 3 }), "provider_error"],
+    ["rate limit exhaustion", new ModelError("rate_limited", "Sarvam rate limit hit (HTTP 429)", { attemptCount: 3 }), "rate_limited"],
     ["missing API key", new ModelError("missing_api_key", "SARVAM_API_KEY is not set"), "missing_api_key"],
-    ["timeout", new ModelError("timeout", "No response from Sarvam within 30000ms", { retryable: true, attempts: 3 }), "timeout"],
+    ["timeout", new ModelError("timeout", "No response from Sarvam within 30000ms", { retryable: true, attemptCount: 3 }), "timeout"],
     ["truncation", new ModelError("truncated", "Sarvam stopped at max_tokens; the output is incomplete"), "truncated"],
   ];
   for (const [label, error, kind] of failures) {
@@ -362,7 +362,7 @@ describe("model behaviour", () => {
 
   it("a dependency that returns an invalid output despite ok: true is a model failure", async () => {
     const liar: StructuredCallSarvam = async () =>
-      ({ ok: true, value: { mode: "structured", output: { action: "defend" }, metadata: { latencyMs: 0, attempts: 1 } } }) as never;
+      ({ ok: true, value: { mode: "structured", output: { action: "defend" }, metadata: { latencyMs: 0, attemptCount: 1 } } }) as never;
     const r = await runAgent(makeDispute(), makeDeps(liar));
     expect(r.recommendation.modelOutput).toBeNull();
     expect(outcomes(r.actionLog)).toContain("model_failure:schema_validation_failed");
@@ -751,15 +751,130 @@ describe("injected clock", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Model-call telemetry
+// ---------------------------------------------------------------------------
+
+describe("model-call telemetry", () => {
+  /** A controlled model that reports the given telemetry, as the real callSarvam would. */
+  const timedModel = (metadata: { attemptCount: number; latencyMs: number; totalTokens?: number }): StructuredCallSarvam =>
+    async <Schema extends z.ZodType>(request: StructuredRequest<Schema>) => {
+      const output = request.schema.parse(defaultOutput) as z.output<Schema>;
+      return {
+        ok: true as const,
+        value: {
+          mode: "structured" as const,
+          output,
+          metadata: {
+            providerRequestId: "chatcmpl-telemetry",
+            model: "sarvam-105b",
+            finishReason: "stop",
+            ...(metadata.totalTokens !== undefined
+              ? { usage: { promptTokens: 1, completionTokens: 1, totalTokens: metadata.totalTokens } }
+              : {}),
+            latencyMs: metadata.latencyMs,
+            attemptCount: metadata.attemptCount,
+          },
+        },
+      };
+    };
+  const defaultOutput = output();
+
+  function expectContractValid(r: AgentRunResult) {
+    expect(RecommendationSchema.safeParse(r.recommendation).success).toBe(true);
+    for (const e of r.actionLog) expect(ActionLogEntrySchema.safeParse(e).success).toBe(true);
+    // Telemetry never leaks into the persisted structures.
+    expect(JSON.stringify([r.recommendation, r.actionLog])).not.toMatch(/attemptCount|latencyMs|totalTokens|chatcmpl-telemetry/);
+  }
+
+  it("exposes success telemetry to the caller, with the run unchanged", async () => {
+    const r = await runAgent(makeDispute(), makeDeps(timedModel({ attemptCount: 2, latencyMs: 12_800, totalTokens: 432 })));
+    expectContractValid(r);
+    expect(r.recommendation.finalAction).toBe("defend");
+    expect(r.modelCallMetadata).toEqual({
+      status: "succeeded",
+      attemptCount: 2,
+      latencyMs: 12_800,
+      totalTokens: 432,
+      providerRequestId: "chatcmpl-telemetry",
+      model: "sarvam-105b",
+      finishReason: "stop",
+    });
+  });
+
+  it("reports totalTokens as null when the provider sent no usage", async () => {
+    const r = await runAgent(makeDispute(), makeDeps(timedModel({ attemptCount: 1, latencyMs: 900 })));
+    expect(r.modelCallMetadata).toMatchObject({ status: "succeeded", attemptCount: 1, totalTokens: null });
+  });
+
+  it("exposes failure telemetry while the escalation stays unchanged", async () => {
+    const error = new ModelError("budget_exhausted", "Model call budget of 25000ms used up after 2 attempt(s); last failure: timeout", {
+      attemptCount: 2,
+      latencyMs: 25_000,
+    });
+    const r = await runAgent(makeDispute(), makeDeps(createMockCallSarvam(error)));
+    expectContractValid(r);
+    expect(r.recommendation).toMatchObject({ modelOutput: null, finalAction: "escalate", flags: ["model_failure"] });
+    expect(outcomes(r.actionLog)).toContain("model_failure:budget_exhausted");
+    expect(r.modelCallMetadata).toEqual({
+      status: "failed",
+      failureKind: "budget_exhausted",
+      attemptCount: 2,
+      latencyMs: 25_000,
+      totalTokens: null,
+    });
+  });
+
+  it("keeps response telemetry for a malformed response", async () => {
+    const r = await runAgent(makeDispute(), makeDeps(createMockCallSarvam({ ...output(), action: "win" } as unknown as ModelOutput)));
+    expect(r.recommendation.modelOutput).toBeNull();
+    expect(r.modelCallMetadata).toMatchObject({
+      status: "failed",
+      failureKind: "schema_validation_failed",
+      attemptCount: 1,
+      providerRequestId: "mock-chatcmpl-1",
+    });
+  });
+
+  it("keeps success telemetry when the rules reject the model's evidence refs", async () => {
+    const r = await runAgent(makeDispute(), makeDeps(createMockCallSarvam(output({ evidenceRefs: ["ev_unknown"] }))));
+    expect(r.recommendation.flags).toEqual(["model_failure"]);
+    // The provider call itself succeeded; the action log records the rejection.
+    expect(r.modelCallMetadata).toMatchObject({ status: "succeeded", attemptCount: 1 });
+  });
+
+  it("is null when the model is never called", async () => {
+    // Only reachable for a valid dispute if evidence assessment fails; see
+    // run-agent-failures.test.ts. Here: a dependency that throws reports nothing.
+    const thrower: StructuredCallSarvam = async () => {
+      throw new Error("boom");
+    };
+    const r = await runAgent(makeDispute(), makeDeps(thrower));
+    expect(r.modelCallMetadata).toBeNull();
+  });
+
+  it("is null when an injected dependency returns malformed telemetry", async () => {
+    const liar: StructuredCallSarvam = async () =>
+      ({ ok: true, value: { mode: "structured", output: output(), metadata: { latencyMs: -5 } } }) as never;
+    const r = await runAgent(makeDispute(), makeDeps(liar));
+    expect(r.modelCallMetadata).toBeNull();
+    expect(r.recommendation.finalAction).toBe("defend");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Integration and architecture
 // ---------------------------------------------------------------------------
 
 describe("integration", () => {
-  it("returns exactly recommendation and actionLog", async () => {
+  it("returns exactly recommendation, actionLog and the transient modelCallMetadata", async () => {
     const r = await runAgent(makeDispute(), makeDeps(createMockCallSarvam(output())));
-    expect(Object.keys(r).sort()).toEqual(["actionLog", "recommendation"]);
+    expect(Object.keys(r).sort()).toEqual(["actionLog", "modelCallMetadata", "recommendation"]);
     expectTypeOf(r).toEqualTypeOf<AgentRunResult>();
-    expectTypeOf<AgentRunResult>().toEqualTypeOf<{ recommendation: Recommendation; actionLog: ActionLogEntry[] }>();
+    expectTypeOf<AgentRunResult>().toEqualTypeOf<{
+      recommendation: Recommendation;
+      actionLog: ActionLogEntry[];
+      modelCallMetadata: ModelCallMetadata | null;
+    }>();
   });
 
   it("fits the recommendation/actionLog fields of SaveAgentRunInput", async () => {

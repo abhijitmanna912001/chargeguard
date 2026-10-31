@@ -27,7 +27,7 @@ export const MOCK_METADATA: ResponseMetadata = {
   finishReason: "stop",
   usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
   latencyMs: 0,
-  attempts: 1,
+  attemptCount: 1,
 };
 
 export function createMockCallSarvam(reply: MockReply): StructuredCallSarvam {
@@ -43,7 +43,8 @@ export function createMockCallSarvam(reply: MockReply): StructuredCallSarvam {
       return {
         ok: false,
         error: new ModelError("schema_validation_failed", "Model output failed schema validation", {
-          attempts: MOCK_METADATA.attempts,
+          attemptCount: MOCK_METADATA.attemptCount,
+          latencyMs: MOCK_METADATA.latencyMs,
           metadata: MOCK_METADATA,
           issues: toIssues(parsed.error),
         }),

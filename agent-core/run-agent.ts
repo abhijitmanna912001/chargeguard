@@ -27,6 +27,7 @@ import { assessEvidence, type EvidenceAssessment } from "./evidence";
 import { ModelError } from "./model/errors";
 import type { StructuredCallSarvam } from "./model/mock";
 import { toIssues } from "./model/parse";
+import { readModelCallMetadata, type ModelCallMetadata } from "./model/telemetry";
 import { buildModelContext, buildModelRequest } from "./model-context";
 
 // The agent orchestrator: evidence assessment, one Sarvam recommendation, then
@@ -53,6 +54,13 @@ export type RunAgentDependencies = {
 export type AgentRunResult = {
   recommendation: Recommendation;
   actionLog: ActionLogEntry[];
+  /**
+   * Transient telemetry of the model call (attempts, latency, tokens) for the
+   * caller to log. Not part of the Recommendation or action log; never stored.
+   * null when the model was not called, or when the injected dependency threw
+   * or returned a result without usable telemetry.
+   */
+  modelCallMetadata: ModelCallMetadata | null;
 };
 
 /**
@@ -89,6 +97,8 @@ type Run = {
   nextId: (prefix: "rec" | "log") => string;
   /** "failed" once the injected clock has been replaced; "reported" once logged. */
   clock: "ok" | "failed" | "reported";
+  /** Set when the model call returns; survives an internal failure after it. */
+  modelCallMetadata: ModelCallMetadata | null;
 };
 
 type EntryFields = Omit<ActionLogEntry, "id" | "disputeId" | "timestamp">;
@@ -116,6 +126,7 @@ function startRun(dispute: Dispute, deps: RunAgentDependencies): Run {
     stamp: () => "",
     nextId: () => "",
     clock: "ok",
+    modelCallMetadata: null,
   };
 
   // The injected clock when it works, otherwise the system clock; the switch
@@ -324,6 +335,8 @@ async function recommend(
   let output: ModelOutput;
   try {
     const result = await call(buildModelRequest(buildModelContext(assessment, ruleFlags)));
+    // Telemetry describes the provider call, whatever the rules make of its output below.
+    run.modelCallMetadata = readModelCallMetadata(result);
     if (!result.ok) return failed(result.error instanceof ModelError ? result.error.kind : "unknown_error");
     // callSarvam already validated this; checked again because the
     // dependency is injectable and nothing downstream may trust it blindly.
@@ -403,7 +416,7 @@ function finish(run: Run, modelOutput: ModelOutput | null): AgentRunResult {
     ...(decision.overrideReason ? { overrideReason: decision.overrideReason } : {}),
     flags,
   });
-  return { recommendation, actionLog: [...run.log] };
+  return { recommendation, actionLog: [...run.log], modelCallMetadata: run.modelCallMetadata };
 }
 
 /** Last resort after an unexpected error: keep what was logged, escalate. */
@@ -424,5 +437,5 @@ function internalFailure(run: Run): AgentRunResult {
     finalAction: "escalate",
     flags: orderedFlags([...run.flags, "model_failure"]),
   });
-  return { recommendation, actionLog: [...run.log] };
+  return { recommendation, actionLog: [...run.log], modelCallMetadata: run.modelCallMetadata };
 }

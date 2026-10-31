@@ -47,6 +47,11 @@ export async function runAgentAction(disputeId: string): Promise<ActionState> {
         ? { ok: false, message: "We could not find that dispute." }
         : NOT_READY;
     }
+    // Server-side telemetry only (attempts, latency, tokens; no prompt or
+    // evidence). Not stored and not sent to the client. null in mock mode.
+    if (result.modelCallMetadata) {
+      console.info("runAgentAction model call", { disputeId: parsed.data.disputeId, ...result.modelCallMetadata });
+    }
     revalidateDispute(parsed.data.disputeId);
     return { ok: true };
   } catch (err) {

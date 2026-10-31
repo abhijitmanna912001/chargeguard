@@ -5,9 +5,14 @@ import {
   callSarvam,
   defineTool,
   DEFAULT_SCHEMA_NAME,
+  DEFAULT_TIMEOUT_MS,
+  DEFAULT_TOTAL_BUDGET_MS,
+  MAX_RETRIES,
   MAX_TOKENS_CAP,
+  MIN_ATTEMPT_MS,
   ModelError,
   SARVAM_MODEL,
+  toModelCallMetadata,
   type CallOptions,
   type StructuredRequest,
   type ToolRequest,
@@ -147,7 +152,7 @@ describe("structured output", () => {
       model: SARVAM_MODEL,
       finishReason: "stop",
       usage: { promptTokens: 120, completionTokens: 45, totalTokens: 165 },
-      attempts: 1,
+      attemptCount: 1,
     });
     expect(result.value.metadata.usage?.reasoningTokens).toBeUndefined();
     expect(result.value.metadata.latencyMs).toBeGreaterThanOrEqual(0);
@@ -363,7 +368,7 @@ describe("HTTP failures", () => {
   ])("HTTP %i %s -> %s, no retry", async (status, code, kind) => {
     fetchMock.mockResolvedValue(reply(status, errorBody(code)));
     const error = await expectError(callSarvam(structured, opts), kind);
-    expect(error).toMatchObject({ status, providerCode: code, attempts: 1, retryable: false });
+    expect(error).toMatchObject({ status, providerCode: code, attemptCount: 1, retryable: false });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(sleeps).toEqual([]);
   });
@@ -388,14 +393,14 @@ describe("HTTP failures", () => {
       .mockResolvedValueOnce(okContent(JSON.stringify(VALID_OUTPUT)));
     const result = await callSarvam(structured, opts);
     if (!result.ok) throw result.error;
-    expect(result.value.metadata.attempts).toBe(2);
+    expect(result.value.metadata.attemptCount).toBe(2);
     expect(sleeps).toEqual([500]);
   });
 
   it("stops after 3 attempts with exponential backoff", async () => {
     fetchMock.mockImplementation(async () => reply(503, errorBody("model_overloaded")));
     const error = await expectError(callSarvam(structured, opts), "provider_error");
-    expect(error).toMatchObject({ attempts: 3, retryable: true, status: 503 });
+    expect(error).toMatchObject({ attemptCount: 3, retryable: true, status: 503 });
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(sleeps).toEqual([500, 1000]);
   });
@@ -403,7 +408,7 @@ describe("HTTP failures", () => {
   it("clamps maxRetries so a caller cannot loop forever", async () => {
     fetchMock.mockImplementation(async () => reply(500, errorBody("internal_server_error")));
     const error = await expectError(callSarvam(structured, { ...opts, maxRetries: 1_000 }), "provider_error");
-    expect(error.attempts).toBe(3);
+    expect(error.attemptCount).toBe(3);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -425,7 +430,7 @@ describe("HTTP failures", () => {
   it("returns rate_limited when Retry-After exceeds the backoff cap", async () => {
     fetchMock.mockResolvedValue(reply(429, errorBody("rate_limit_exceeded_error"), { "retry-after": "30" }));
     const error = await expectError(callSarvam(structured, opts), "rate_limited");
-    expect(error).toMatchObject({ retryable: true, retryAfterMs: 30_000, attempts: 1 });
+    expect(error).toMatchObject({ retryable: true, retryAfterMs: 30_000, attemptCount: 1 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(sleeps).toEqual([]);
   });
@@ -433,7 +438,7 @@ describe("HTTP failures", () => {
   it("retries network errors and reports the cause code only", async () => {
     fetchMock.mockRejectedValue(new TypeError("fetch failed", { cause: { code: "ECONNREFUSED" } }));
     const error = await expectError(callSarvam(structured, opts), "network_error");
-    expect(error).toMatchObject({ attempts: 3, retryable: true });
+    expect(error).toMatchObject({ attemptCount: 3, retryable: true });
     expect(error.message).toContain("ECONNREFUSED");
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
@@ -446,7 +451,7 @@ describe("HTTP failures", () => {
         }),
     );
     const error = await expectError(callSarvam(structured, { ...opts, timeoutMs: 5 }), "timeout");
-    expect(error).toMatchObject({ attempts: 3, retryable: true });
+    expect(error).toMatchObject({ attemptCount: 3, retryable: true });
     expect(error.message).toContain("5ms");
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(sleeps).toEqual([500, 1000]);
@@ -463,13 +468,404 @@ describe("HTTP failures", () => {
       .mockResolvedValueOnce(okContent(JSON.stringify(VALID_OUTPUT)));
     const result = await callSarvam(structured, { ...opts, timeoutMs: 5 });
     if (!result.ok) throw result.error;
-    expect(result.value.metadata.attempts).toBe(2);
+    expect(result.value.metadata.attemptCount).toBe(2);
   });
 
   it("does not retry invalid model output", async () => {
     fetchMock.mockResolvedValue(okContent("not json"));
     await expectError(callSarvam(structured, opts), "invalid_json");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Total call budget and telemetry (fake timers: setTimeout and performance.now)
+// ---------------------------------------------------------------------------
+
+describe("total call budget and telemetry", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A fetch that answers after `ms` of (fake) time, or rejects if aborted first. */
+  const after =
+    (ms: number, make: () => Response) =>
+    (_url: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(make()), ms);
+        init?.signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+  /** A fetch that never answers; only the abort timer ends it. (No timer: Node clamps huge delays to 1 ms.) */
+  const hang = (_url: string | URL | Request, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    });
+  const ok = (ms: number) => after(ms, () => okContent(JSON.stringify(VALID_OUTPUT)));
+
+  /** Real backoff (setTimeout) so waits count against the budget. */
+  async function call(options: CallOptions = {}) {
+    const pending = callSarvam(structured, options);
+    await vi.runAllTimersAsync();
+    return pending;
+  }
+
+  function expectNoBackgroundWork() {
+    for (const [, init] of fetchMock.mock.calls) {
+      // Each finished attempt either answered or had its fetch aborted.
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+    }
+    expect(vi.getTimerCount()).toBe(0);
+  }
+
+  it("uses 12s per attempt and a 25s total budget by default", () => {
+    expect(DEFAULT_TIMEOUT_MS).toBe(12_000);
+    expect(DEFAULT_TOTAL_BUDGET_MS).toBe(25_000);
+    expect(MAX_RETRIES).toBe(2);
+    expect(MIN_ATTEMPT_MS).toBe(1_000);
+  });
+
+  it("first-attempt success: attemptCount 1, latency of the whole call, provider tokens", async () => {
+    fetchMock.mockImplementationOnce(ok(800));
+    const result = await call();
+    if (!result.ok) throw result.error;
+    expect(result.value.metadata).toMatchObject({ attemptCount: 1, latencyMs: 800 });
+    expect(toModelCallMetadata(result)).toEqual({
+      status: "succeeded",
+      attemptCount: 1,
+      latencyMs: 800,
+      totalTokens: 165,
+      providerRequestId: "chatcmpl-test-1",
+      model: SARVAM_MODEL,
+      finishReason: "stop",
+    });
+    expectNoBackgroundWork();
+  });
+
+  it("first attempt times out at 12s, second succeeds: latency includes timeout, backoff and attempt 2", async () => {
+    fetchMock.mockImplementationOnce(hang).mockImplementationOnce(ok(300));
+    const result = await call();
+    if (!result.ok) throw result.error;
+    // 12 000 (timeout) + 500 (backoff) + 300 (second attempt)
+    expect(result.value.metadata).toMatchObject({ attemptCount: 2, latencyMs: 12_800 });
+    expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    expectNoBackgroundWork();
+  });
+
+  it("stops before a retry that the remaining budget cannot hold", async () => {
+    fetchMock.mockImplementation(hang);
+    const result = await call();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // 12 000 + 500 backoff + 12 000 = 24 500; a 1 000 ms backoff would leave
+    // 500 ms, under MIN_ATTEMPT_MS, so no third attempt starts.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.error).toMatchObject({ kind: "budget_exhausted", retryable: false, attemptCount: 2, latencyMs: 24_500 });
+    expect(result.error.message).toContain("last failure: timeout");
+    expect(toModelCallMetadata(result)).toEqual({
+      status: "failed",
+      failureKind: "budget_exhausted",
+      attemptCount: 2,
+      latencyMs: 24_500,
+      totalTokens: null,
+    });
+    expect(fetchMock.mock.calls.every(([, init]) => init?.signal?.aborted)).toBe(true);
+    expectNoBackgroundWork();
+  });
+
+  it("clips an attempt's timeout to the remaining budget and never runs past it", async () => {
+    fetchMock.mockImplementation(hang);
+    const result = await call({ totalBudgetMs: 15_000 });
+    if (result.ok) throw new Error("expected failure");
+    // 12 000 + 500 + a second attempt cut to the 2 500 ms left.
+    expect(result.error).toMatchObject({ kind: "budget_exhausted", attemptCount: 2, latencyMs: 15_000 });
+    expectNoBackgroundWork();
+  });
+
+  it("does not wait for a Retry-After longer than the remaining budget", async () => {
+    // Attempt 1 times out (12 000), backoff 500, attempt 2 answers 429 with
+    // Retry-After 3 s at 22 000. Waiting 3 000 would leave nothing for an
+    // attempt, so the call ends at once instead of sleeping into the deadline.
+    fetchMock
+      .mockImplementationOnce(hang)
+      .mockImplementationOnce(after(9_500, () => reply(429, errorBody("rate_limit_exceeded_error"), { "retry-after": "3" })));
+    const result = await call();
+    if (result.ok) throw new Error("expected failure");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.error).toMatchObject({
+      kind: "budget_exhausted",
+      attemptCount: 2,
+      latencyMs: 22_000,
+      status: 429,
+      retryAfterMs: 3_000,
+    });
+    expect(result.error.latencyMs).toBeLessThanOrEqual(DEFAULT_TOTAL_BUDGET_MS);
+    expectNoBackgroundWork();
+  });
+
+  it("non-retryable auth failure: exactly one attempt, safe metadata", async () => {
+    fetchMock.mockImplementation(
+      after(200, () => reply(401, { error: { code: "invalid_api_key_error", message: API_KEY, request_id: "req_401" } })),
+    );
+    const result = await call();
+    if (result.ok) throw new Error("expected failure");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const metadata = toModelCallMetadata(result);
+    expect(metadata).toEqual({
+      status: "failed",
+      failureKind: "auth_failed",
+      attemptCount: 1,
+      latencyMs: 200,
+      totalTokens: null,
+      providerRequestId: "req_401",
+    });
+    // The raw provider body (here echoing the key) never reaches metadata or the error.
+    expect(JSON.stringify([metadata, result.error])).not.toContain(API_KEY);
+    expectNoBackgroundWork();
+  });
+
+  it("all attempts fail: actual attemptCount and total latency, totalTokens null", async () => {
+    fetchMock.mockImplementation(after(100, () => reply(503, errorBody("model_overloaded"))));
+    const result = await call();
+    if (result.ok) throw new Error("expected failure");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    // 100 + 500 + 100 + 1 000 + 100
+    expect(toModelCallMetadata(result)).toEqual({
+      status: "failed",
+      failureKind: "provider_error",
+      attemptCount: 3,
+      latencyMs: 1_800,
+      totalTokens: null,
+    });
+    expectNoBackgroundWork();
+  });
+
+  it("truncated response: safe failure that keeps the response metadata, no partial output", async () => {
+    fetchMock.mockImplementation(after(400, () => okContent('{"action":"defend","reasoning":"PARTIAL-OUTPUT', "length")));
+    const result = await call();
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.kind).toBe("truncated");
+    const metadata = toModelCallMetadata(result);
+    expect(metadata).toEqual({
+      status: "failed",
+      failureKind: "truncated",
+      attemptCount: 1,
+      latencyMs: 400,
+      totalTokens: 165,
+      providerRequestId: "chatcmpl-test-1",
+      model: SARVAM_MODEL,
+      finishReason: "length",
+    });
+    expect(JSON.stringify([metadata, result.error])).not.toContain("PARTIAL-OUTPUT");
+  });
+
+  it("malformed envelope: safe failure with timing, no fabricated response fields", async () => {
+    fetchMock.mockImplementation(after(250, () => reply(200, { not: "a completion" })));
+    const result = await call();
+    if (result.ok) throw new Error("expected failure");
+    expect(toModelCallMetadata(result)).toEqual({
+      status: "failed",
+      failureKind: "invalid_envelope",
+      attemptCount: 1,
+      latencyMs: 250,
+      totalTokens: null,
+    });
+  });
+
+  it("failure before the network: zero attempts and the time spent", async () => {
+    vi.stubEnv("SARVAM_API_KEY", "");
+    const result = await call();
+    if (result.ok) throw new Error("expected failure");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(toModelCallMetadata(result)).toEqual({
+      status: "failed",
+      failureKind: "missing_api_key",
+      attemptCount: 0,
+      latencyMs: 0,
+      totalTokens: null,
+    });
+  });
+
+  it("keeps the request id, model and usage salvaged from an invalid envelope", async () => {
+    // choices is broken, so the envelope fails; the plain top-level fields are still valid.
+    const body = { id: "chatcmpl-partial-1", model: SARVAM_MODEL, choices: "oops", usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
+    fetchMock.mockImplementation(after(250, () => reply(200, body)));
+    const result = await call();
+    if (result.ok) throw new Error("expected failure");
+    expect(toModelCallMetadata(result)).toEqual({
+      status: "failed",
+      failureKind: "invalid_envelope",
+      attemptCount: 1,
+      latencyMs: 250,
+      totalTokens: 15,
+      providerRequestId: "chatcmpl-partial-1",
+      model: SARVAM_MODEL,
+    });
+  });
+
+  it("drops salvaged fields that are not plain tokens or valid counts", async () => {
+    const body = {
+      id: "customer says: parcel never arrived, call me on 98xxxx",
+      model: { name: SARVAM_MODEL },
+      choices: [],
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: -1 },
+      raw: "PARTIAL-OUTPUT",
+    };
+    // choices: [] is a valid envelope, so make the envelope itself fail too.
+    fetchMock.mockImplementation(after(100, () => reply(200, { ...body, choices: null })));
+    const result = await call();
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error.metadata).toBeUndefined();
+    expect(toModelCallMetadata(result)).toEqual({
+      status: "failed",
+      failureKind: "invalid_envelope",
+      attemptCount: 1,
+      latencyMs: 100,
+      totalTokens: null,
+    });
+    expect(JSON.stringify(result.error)).not.toMatch(/parcel|PARTIAL-OUTPUT/);
+  });
+
+  it("keeps no response fields for a 200 with a non-JSON body", async () => {
+    fetchMock.mockImplementation(after(50, () => reply(200, "<html>chatcmpl-123 sarvam-105b</html>")));
+    const result = await call();
+    if (result.ok) throw new Error("expected failure");
+    expect(toModelCallMetadata(result)).toEqual({
+      status: "failed",
+      failureKind: "invalid_envelope",
+      attemptCount: 1,
+      latencyMs: 50,
+      totalTokens: null,
+    });
+  });
+
+  it("success without usage: totalTokens is null, not estimated", async () => {
+    const { usage: _usage, ...body } = completion({ content: JSON.stringify(VALID_OUTPUT) });
+    void _usage;
+    fetchMock.mockImplementation(after(120, () => reply(200, body)));
+    const result = await call();
+    if (!result.ok) throw result.error;
+    expect(toModelCallMetadata(result)).toMatchObject({ status: "succeeded", attemptCount: 1, latencyMs: 120, totalTokens: null });
+  });
+
+  it("accepts an injected monotonic clock", async () => {
+    let now = 1_000;
+    fetchMock.mockImplementationOnce(async () => {
+      now += 640;
+      return okContent(JSON.stringify(VALID_OUTPUT));
+    });
+    const result = await callSarvam(structured, { clock: () => now });
+    if (!result.ok) throw result.error;
+    expect(result.value.metadata.latencyMs).toBe(640);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Budget re-checked before every request (injected clock and sleep)
+// ---------------------------------------------------------------------------
+
+describe("budget re-checked before every request", () => {
+  /** A fake monotonic clock that fetch and sleep move forward explicitly. */
+  function scenario(steps: { fetchMs: number; sleepMs?: (delay: number) => number }) {
+    let now = 0;
+    const waits: number[] = [];
+    fetchMock.mockImplementation(async () => {
+      now += steps.fetchMs;
+      return reply(503, errorBody("model_overloaded"));
+    });
+    const options: CallOptions = {
+      clock: () => now,
+      sleep: async (delay) => {
+        waits.push(delay);
+        now += steps.sleepMs ? steps.sleepMs(delay) : delay;
+      },
+    };
+    return { options, waits };
+  }
+
+  it("does not start a retry when the sleep overshoots and leaves less than MIN_ATTEMPT_MS", async () => {
+    // Attempt 1: 500 ms, then a 500 ms backoff that the scheduler stretches to
+    // 24 100 ms. 400 ms remain (< MIN_ATTEMPT_MS), so no second request.
+    const { options, waits } = scenario({ fetchMs: 500, sleepMs: () => 24_100 });
+    const error = await expectError(callSarvam(structured, options), "budget_exhausted");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(waits).toEqual([500]);
+    expect(error).toMatchObject({ attemptCount: 1, latencyMs: 24_600, retryable: false, status: 503 });
+    expect(error.message).toContain("last failure: provider_error");
+  });
+
+  it("does not start a retry after the deadline has passed", async () => {
+    // The backoff overshoots past the 25 s deadline entirely.
+    const { options } = scenario({ fetchMs: 500, sleepMs: () => 30_000 });
+    const error = await expectError(callSarvam(structured, options), "budget_exhausted");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // The latency is the true elapsed time, overshoot included; no attempt was added.
+    expect(error).toMatchObject({ attemptCount: 1, latencyMs: 30_500 });
+  });
+
+  it("checks again before the third attempt, not only before the second", async () => {
+    // Attempt 1 (500) + backoff 500 + attempt 2 (500) = 1 500; the 1 000 ms
+    // backoff then overshoots to 23 000, leaving 500 ms at the check.
+    let sleeps = 0;
+    const { options, waits } = scenario({ fetchMs: 500, sleepMs: (delay) => (++sleeps === 2 ? 23_000 : delay) });
+    const error = await expectError(callSarvam(structured, options), "budget_exhausted");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(waits).toEqual([500, 1_000]);
+    expect(error).toMatchObject({ attemptCount: 2, latencyMs: 24_500 });
+  });
+
+  it("does not start the first attempt when the budget is already spent", async () => {
+    // Request preparation (validation, payload) itself overran the budget.
+    let reads = 0;
+    const clock = () => (reads++ === 0 ? 0 : 26_000);
+    const error = await expectError(callSarvam(structured, { clock, sleep: async () => {} }), "budget_exhausted");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(error).toMatchObject({ attemptCount: 0, latencyMs: 26_000 });
+    expect(error.message).toContain("before the first attempt");
+  });
+
+  it("still retries normally when the wait does not overshoot", async () => {
+    const { options, waits } = scenario({ fetchMs: 100 });
+    const error = await expectError(callSarvam(structured, options), "provider_error");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(waits).toEqual([500, 1_000]);
+    expect(error).toMatchObject({ attemptCount: 3, latencyMs: 1_800 });
+  });
+
+  it("never requests a sleep longer than the remaining budget", async () => {
+    // Each attempt answers 429 with Retry-After 4 s after the given time.
+    // Attempt 1 ends at 20 000: 5 000 remain, so a 4 000 ms wait fits with
+    // MIN_ATTEMPT_MS to spare. Attempt 2 ends past the deadline (27 000): the
+    // wait is clamped to 0 and skipped, and no third request starts.
+    let now = 0;
+    const latencies = [20_000, 3_000];
+    const sleeps: { delay: number; remaining: number }[] = [];
+    fetchMock.mockImplementation(async () => {
+      now += latencies.shift() ?? 0;
+      return reply(429, errorBody("rate_limit_exceeded_error"), { "retry-after": "4" });
+    });
+    const error = await expectError(
+      callSarvam(structured, {
+        clock: () => now,
+        sleep: async (delay) => {
+          sleeps.push({ delay, remaining: DEFAULT_TOTAL_BUDGET_MS - now });
+          now += delay;
+        },
+      }),
+      "budget_exhausted",
+    );
+    expect(sleeps).toEqual([{ delay: 4_000, remaining: 5_000 }]);
+    for (const { delay, remaining } of sleeps) {
+      expect(delay).toBeLessThanOrEqual(remaining);
+      expect(remaining - delay).toBeGreaterThanOrEqual(MIN_ATTEMPT_MS);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(error).toMatchObject({ attemptCount: 2, latencyMs: 27_000 });
   });
 });
 
